@@ -1,228 +1,234 @@
 import pygame
 import pytmx
 import math
+import random
 from pygame.locals import *
 
-# --- INITIALISATION ---
+# --- CONFIGURATION ---
 pygame.init()
-
-# Constantes
-SCREEN_WIDTH = 800
-SCREEN_HEIGHT = 600
+SCREEN_WIDTH, SCREEN_HEIGHT = 800, 600
 FPS = 60
 GRAVITY = 0.8
-JUMP_STRENGTH = -12  # Ajusté pour un saut plus naturel
+JUMP_STRENGTH = -14
 MOVE_SPEED = 5
-
-# Couleurs
-WHITE = (255, 255, 255)
-BLUE = (50, 150, 255)
-PINK = (255, 182, 193)
-
-# Initialisation de l'écran
+CLIMB_SPEED = 4 # Vitesse quand on grimpe au mur
 screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
-pygame.display.set_caption("Mon Jeu de Plateforme - Pétales")
 clock = pygame.time.Clock()
 
-# --- CLASSES ---
-
-class Player(pygame.sprite.Sprite):
-    def __init__(self, x, y):
-        super().__init__()
-        
-        # Chargement de la texture
-        try:
-            self.image = pygame.image.load("assets/player/player.png").convert_alpha()
-        except Exception as e:
-            print(f"⚠️ Texture perso introuvable : {e}")
-            self.image = pygame.Surface((32, 48))
-            self.image.fill(BLUE)
-
-        self.rect = self.image.get_rect()
-        self.rect.x = x
-        self.rect.y = y
-        
-        # Physique
-        self.velocity_x = 0
-        self.velocity_y = 0
-        self.on_ground = False
-
-    def update(self, collision_tiles):
-        # Gravité
-        self.velocity_y += GRAVITY
-        
-        # Contrôles
-        keys = pygame.key.get_pressed()
-        self.velocity_x = 0
-        if keys[K_LEFT] or keys[K_q]:
-            self.velocity_x = -MOVE_SPEED
-        if keys[K_RIGHT] or keys[K_d]:
-            self.velocity_x = MOVE_SPEED
-        if (keys[K_SPACE] or keys[K_UP] or keys[K_z]) and self.on_ground:
-            self.velocity_y = JUMP_STRENGTH
-            self.on_ground = False
-        
-        # Déplacement X
-        self.rect.x += self.velocity_x
-        self.check_collisions_x(collision_tiles)
-        
-        # Déplacement Y
-        self.rect.y += self.velocity_y
-        self.check_collisions_y(collision_tiles)
-
-    def check_collisions_x(self, collision_tiles):
-        for tile in collision_tiles:
-            if self.rect.colliderect(tile):
-                if self.velocity_x > 0: self.rect.right = tile.left
-                elif self.velocity_x < 0: self.rect.left = tile.right
-
-    def check_collisions_y(self, collision_tiles):
-        self.on_ground = False
-        for tile in collision_tiles:
-            if self.rect.colliderect(tile):
-                if self.velocity_y > 0:
-                    self.rect.bottom = tile.top
-                    self.velocity_y = 0
-                    self.on_ground = True
-                elif self.velocity_y < 0:
-                    self.rect.top = tile.bottom
-                    self.velocity_y = 0
-
-    def draw(self, screen, camera_x, camera_y):
-        screen.blit(self.image, (self.rect.x - camera_x, self.rect.y - camera_y))
-
-
+# =================================================================
+# PROJECTILES (PÉTALES)
+# =================================================================
 class Petal(pygame.sprite.Sprite):
     def __init__(self, x, y, target_x, target_y):
         super().__init__()
         self.image = pygame.Surface((10, 10), pygame.SRCALPHA)
-        pygame.draw.circle(self.image, PINK, (5, 5), 5)
+        pygame.draw.circle(self.image, (255, 182, 193), (5, 5), 5)
         self.rect = self.image.get_rect(center=(x, y))
         
-        # Calcul du vecteur de direction
         dx = target_x - x
         dy = target_y - y
         dist = math.hypot(dx, dy)
-        
         self.speed = 12
-        if dist != 0:
-            self.vx = (dx / dist) * self.speed
-            self.vy = (dy / dist) * self.speed
-        else:
-            self.vx, self.vy = 0, 0
+        self.vx = (dx / dist * self.speed) if dist != 0 else 0
+        self.vy = (dy / dist * self.speed) if dist != 0 else 0
 
     def update(self):
         self.rect.x += self.vx
         self.rect.y += self.vy
 
-    def draw(self, screen, camera_x, camera_y):
-        screen.blit(self.image, (self.rect.x - camera_x, self.rect.y - camera_y))
+# =================================================================
+# BOSS : DÉPLACEMENT + SUIVI
+# =================================================================
+class Boss(pygame.sprite.Sprite):
+    def __init__(self, tile_x, tile_y, tile_size):
+        super().__init__()
+        self.tile_size = tile_size
+        self.hp = 10
+        self.active = False
+        self.states_anims = {}
+        try:
+            for i in range(1, 5):
+                self.states_anims[f"attack_{i}"] = pygame.image.load(f"assets/boss/attack{i}.png").convert_alpha()
+                self.states_anims[f"pause_{i}"] = pygame.image.load(f"assets/boss/pause{i}.png").convert_alpha()
+        except:
+            for i in range(1, 5):
+                s = pygame.Surface((64, 64)); s.fill((200, 0, 0)); self.states_anims[f"attack_{i}"] = s
+                p = pygame.Surface((64, 64)); p.fill((0, 0, 200)); self.states_anims[f"pause_{i}"] = p
 
+        self.current_state = "attack_1"
+        self.image = self.states_anims[self.current_state]
+        self.rect = self.image.get_rect(topleft=(tile_x * tile_size, tile_y * tile_size))
+        self.state_timer = 0
+        self.duration = 5 * FPS 
+        self.is_paused = False
+        self.speed = 2
 
-class Camera:
-    def __init__(self, width, height):
-        self.width = width
-        self.height = height
-        self.x = 0
-        self.y = 0
+    def take_damage(self, amount):
+        self.hp -= amount
+        if self.hp <= 0: self.active = False
 
-    def update(self, target):
-        self.x = target.rect.centerx - SCREEN_WIDTH // 2
-        self.y = target.rect.centery - SCREEN_HEIGHT // 2
-        # Limites de la carte
-        self.x = max(0, min(self.x, self.width - SCREEN_WIDTH))
-        self.y = max(0, min(self.y, self.height - SCREEN_HEIGHT))
+    def update(self, player_rect):
+        if not self.active or self.hp <= 0: return
+        self.state_timer += 1
+        if self.state_timer >= self.duration:
+            self.state_timer = 0
+            self.is_paused = not self.is_paused
+            rand_num = random.randint(1, 4)
+            mode = "pause" if self.is_paused else "attack"
+            self.current_state = f"{mode}_{rand_num}"
+            self.image = self.states_anims[self.current_state]
 
+        dx = player_rect.x - self.rect.x
+        dy = player_rect.y - self.rect.y
+        dist = math.hypot(dx, dy)
+        if dist > 150:
+            self.rect.x += (dx / dist) * self.speed
+            self.rect.y += (dy / dist) * self.speed
+        elif dist < 100:
+            self.rect.x -= (dx / dist) * self.speed
+            self.rect.y -= (dy / dist) * self.speed
+
+    def draw(self, screen, cam_x, cam_y):
+        if self.active and self.hp > 0:
+            screen.blit(self.image, (self.rect.x - cam_x, self.rect.y - cam_y))
+            pygame.draw.rect(screen, (255,0,0), (self.rect.x - cam_x, self.rect.y - cam_y - 10, self.hp * 6, 5))
+
+# =================================================================
+# JOUEUR : AVEC CAPACITÉ DE GRIMPER (WALL CLIMB)
+# =================================================================
+class Player(pygame.sprite.Sprite):
+    def __init__(self, x, y):
+        super().__init__()
+        try: self.image = pygame.image.load("assets/player/player.png").convert_alpha()
+        except: self.image = pygame.Surface((32, 48)); self.image.fill((0, 255, 0))
+        self.rect = self.image.get_rect(topleft=(x, y))
+        self.vel_x, self.vel_y = 0, 0
+        self.on_ground = False
+        self.is_on_wall = False # Est-ce qu'on touche un mur ?
+
+    def update(self, tiles):
+        keys = pygame.key.get_pressed()
+        
+        # --- PHYSIQUE NORMALE OU GRIMPE ---
+        if self.is_on_wall and not self.on_ground:
+            # On annule la gravité si on grimpe
+            self.vel_y = 0
+            if keys[K_UP] or keys[K_z]:
+                self.vel_y = -CLIMB_SPEED
+            elif keys[K_DOWN] or keys[K_s]:
+                self.vel_y = CLIMB_SPEED
+        else:
+            self.vel_y += GRAVITY
+
+        # Mouvement horizontal
+        self.vel_x = (keys[K_RIGHT] - keys[K_LEFT]) * MOVE_SPEED
+        
+        # Saut
+        if (keys[K_SPACE] or keys[K_UP] or keys[K_z]) and self.on_ground:
+            self.vel_y = JUMP_STRENGTH
+            self.on_ground = False
+
+        # --- COLLISIONS & DÉTECTION MUR ---
+        self.is_on_wall = False # Reset à chaque frame
+        
+        # Déplacement X
+        self.rect.x += self.vel_x
+        for t in tiles:
+            if self.rect.colliderect(t):
+                # Si on touche un mur en étant en l'air, on active la grimpe
+                if not self.on_ground:
+                    self.is_on_wall = True
+                
+                if self.vel_x > 0: self.rect.right = t.left
+                if self.vel_x < 0: self.rect.left = t.right
+        
+        # Déplacement Y
+        self.rect.y += self.vel_y
+        self.on_ground = False
+        for t in tiles:
+            if self.rect.colliderect(t):
+                if self.vel_y > 0: 
+                    self.rect.bottom = t.top
+                    self.vel_y = 0
+                    self.on_ground = True
+                if self.vel_y < 0: 
+                    self.rect.top = t.bottom
+                    self.vel_y = 0
 
 class TiledMap:
-    def __init__(self, filename):
-        self.tmx_data = pytmx.load_pygame(filename)
-        self.width = self.tmx_data.width * self.tmx_data.tilewidth
-        self.height = self.tmx_data.height * self.tmx_data.tileheight
-        self.collision_tiles = self.get_collision_tiles()
+    def __init__(self, path):
+        self.data = pytmx.load_pygame(path)
+        self.tile_size = self.data.tilewidth
+        self.width = self.data.width * self.tile_size
+        self.height = self.data.height * self.tile_size
 
-    def get_collision_tiles(self):
+    def get_layer_rects(self, name):
         rects = []
-        for layer in self.tmx_data.visible_layers:
-            if layer.name.lower() == "hit-box":
+        for layer in self.data.visible_layers:
+            if layer.name.lower() == name.lower():
                 for x, y, gid in layer:
-                    if gid:
-                        rects.append(pygame.Rect(x * self.tmx_data.tilewidth, y * self.tmx_data.tileheight,
-                                               self.tmx_data.tilewidth, self.tmx_data.tileheight))
+                    if gid: rects.append(pygame.Rect(x*self.tile_size, y*self.tile_size, self.tile_size, self.tile_size))
         return rects
 
-    def draw_layer(self, screen, layer_name, camera_x, camera_y):
-        for layer in self.tmx_data.visible_layers:
-            if layer.name.lower() == layer_name.lower() and isinstance(layer, pytmx.TiledTileLayer):
-                for x, y, gid in layer:
-                    if gid:
-                        tile = self.tmx_data.get_tile_image_by_gid(gid)
-                        if tile:
-                            screen.blit(tile, (x * self.tmx_data.tilewidth - camera_x, 
-                                             y * self.tmx_data.tileheight - camera_y))
-
-# --- FONCTION PRINCIPALE ---
-
+# =================================================================
+# MAIN
+# =================================================================
 def main():
-    try:
-        tiled_map = TiledMap("assets/maps/map.tmx")
-    except Exception as e:
-        print(f"❌ Erreur map : {e}")
-        return
-
+    map_data = TiledMap("assets/maps/map.tmx")
     player = Player(100, 100)
-    camera = Camera(tiled_map.width, tiled_map.height)
+    boss = Boss(29, 93, map_data.tile_size)
+    
+    collision_tiles = map_data.get_layer_rects("hit-box")
+    boss_triggers = map_data.get_layer_rects("boss-test")
+    
     petals = []
-    font = pygame.font.Font(None, 28)
+    font = pygame.font.Font(None, 26)
+    cam_x, cam_y = 0, 0
 
-    running = True
-    while running:
-        # 1. Événements
+    while True:
         for event in pygame.event.get():
-            if event.type == QUIT:
-                running = False
-            
-            # Tir au clic droit (bouton 3)
+            if event.type == QUIT: pygame.quit(); return
             if event.type == MOUSEBUTTONDOWN and event.button == 3:
                 mx, my = pygame.mouse.get_pos()
-                # Conversion écran -> monde
-                world_mx = mx + camera.x
-                world_my = my + camera.y
-                petals.append(Petal(player.rect.centerx, player.rect.centery, world_mx, world_my))
+                petals.append(Petal(player.rect.centerx, player.rect.centery, mx + cam_x, my + cam_y))
 
-        # 2. Mise à jour
-        player.update(tiled_map.collision_tiles)
-        camera.update(player)
-        
+        player.update(collision_tiles)
+        cam_x = max(0, min(player.rect.centerx - 400, map_data.width - 800))
+        cam_y = max(0, min(player.rect.centery - 300, map_data.height - 600))
+
+        for trigger in boss_triggers:
+            if player.rect.colliderect(trigger): boss.active = True
+
+        boss.update(player.rect)
+
         for p in petals[:]:
             p.update()
-            # Supprime si trop loin du joueur (distance de 1000px)
-            if math.hypot(p.rect.x - player.rect.x, p.rect.y - player.rect.y) > 1000:
-                petals.remove(p)
+            if boss.active and p.rect.colliderect(boss.rect):
+                boss.take_damage(1); petals.remove(p); continue
+            if math.hypot(p.rect.x - player.rect.x, p.rect.y - player.rect.y) > 1000: petals.remove(p)
 
-        # 3. Rendu
-        screen.fill(WHITE)
-        
-        tiled_map.draw_layer(screen, "base", camera.x, camera.y)
-        tiled_map.draw_layer(screen, "hit-box", camera.x, camera.y)
-        
-        for p in petals:
-            p.draw(screen, camera.x, camera.y)
-            
-        player.draw(screen, camera.x, camera.y)
+        screen.fill((255, 255, 255))
+        for layer in map_data.data.visible_layers:
+            if isinstance(layer, pytmx.TiledTileLayer):
+                for x, y, gid in layer:
+                    img = map_data.data.get_tile_image_by_gid(gid)
+                    if img: screen.blit(img, (x*map_data.tile_size - cam_x, y*map_data.tile_size - cam_y))
 
-        # Debug HUD
+        for p in petals: screen.blit(p.image, (p.rect.x - cam_x, p.rect.y - cam_y))
+        boss.draw(screen, cam_x, cam_y)
+        screen.blit(player.image, (player.rect.x - cam_x, player.rect.y - cam_y))
+
+        # HUD
         px, py = player.rect.x, player.rect.y
-        tx, ty = px // tiled_map.tmx_data.tilewidth, py // tiled_map.tmx_data.tileheight
-        debug_str = f"FPS: {int(clock.get_fps())} | Pos: {px},{py} | Tuile: {tx},{ty}"
+        tx, ty = px // map_data.tile_size, py // map_data.tile_size
+        climb_txt = " | GRIMPE!" if player.is_on_wall else ""
+        debug_str = f"FPS: {int(clock.get_fps())} | Pos: {px},{py} | Tuile: [{tx},{ty}]{climb_txt}"
         debug_surf = font.render(debug_str, True, (0, 0, 0))
-        pygame.draw.rect(screen, (255, 255, 255), (10, 10, debug_surf.get_width() + 10, 30))
-        screen.blit(debug_surf, (15, 15))
+        pygame.draw.rect(screen, (255, 255, 255), (10, 10, debug_surf.get_width() + 10, 25))
+        screen.blit(debug_surf, (15, 13))
 
         pygame.display.flip()
         clock.tick(FPS)
-
-    pygame.quit()
 
 if __name__ == "__main__":
     main()
