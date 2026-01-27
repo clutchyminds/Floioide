@@ -25,22 +25,18 @@ font_hud = pygame.font.Font(None, 22)
 font_menu = pygame.font.Font(None, 60)
 font_small = pygame.font.Font(None, 30)
 
-# --- CHEMINS DES ASSETS ---
+# --- CHEMINS ---
 ASSETS_DIR = "assets"
 PLAYER_IMG = os.path.join(ASSETS_DIR, "player", "player.png")
 MAP_FILE = os.path.join(ASSETS_DIR, "maps", "map.tmx")
 BOSS_DIR = os.path.join(ASSETS_DIR, "boss", "test")
 
-def load_and_scale(path, scale_factor):
-    """Charge une image et la redimensionne proprement."""
+def load_img(path, scale):
     try:
         img = pygame.image.load(path).convert_alpha()
-        w, h = img.get_size()
-        return pygame.transform.scale(img, (int(w * scale_factor), int(h * scale_factor)))
+        return pygame.transform.scale(img, (int(img.get_width() * scale), int(img.get_height() * scale)))
     except:
-        surf = pygame.Surface((64 * scale_factor, 64 * scale_factor))
-        surf.fill((255, 0, 50)) # Rouge si fichier manquant
-        return surf
+        s = pygame.Surface((64, 64)); s.fill((255, 0, 50)); return s
 
 # =================================================================
 # CLASSE BOSS
@@ -48,16 +44,15 @@ def load_and_scale(path, scale_factor):
 class Boss(pygame.sprite.Sprite):
     def __init__(self, tile_x, tile_y, tile_size):
         super().__init__()
-        self.hp = 20
-        self.active = True
+        self.hp = 50
+        self.is_dead = False
         scale = 3
         
-        # Chargement Attaque : attaque00.png à attaque32.png
-        self.anim_attack = [load_and_scale(os.path.join(BOSS_DIR, f"attaque{i:02d}.png"), scale) for i in range(33)]
-        
-        # Chargement Pause : pause1.png et pause2.png répétés 10 fois
-        p1 = load_and_scale(os.path.join(BOSS_DIR, "pause1.png"), scale)
-        p2 = load_and_scale(os.path.join(BOSS_DIR, "pause2.png"), scale)
+        # Frames d'attaque (0.25s entre chaque)
+        self.anim_attack = [load_img(os.path.join(BOSS_DIR, f"attaque{i:02d}.png"), scale) for i in range(33)]
+        # Frames de pause (0.75s entre chaque)
+        p1 = load_img(os.path.join(BOSS_DIR, "pause1.png"), scale)
+        p2 = load_img(os.path.join(BOSS_DIR, "pause2.png"), scale)
         self.anim_pause = [p1, p2] * 10 
 
         self.current_anim = self.anim_attack
@@ -65,34 +60,35 @@ class Boss(pygame.sprite.Sprite):
         self.frame_index = 0
         self.image = self.current_anim[0]
         self.rect = self.image.get_rect(topleft=(tile_x * tile_size, tile_y * tile_size))
+        self.mask = pygame.mask.from_surface(self.image)
         
         self.vel_y = 0
         self.anim_timer = 0
-        self.hit_shake = 0
+        self.hit_flash = 0
 
     def take_damage(self):
-        self.hp -= 1
-        self.hit_shake = 10 # Effet de tremblement
+        if not self.is_dead:
+            self.hp -= 1
+            self.hit_flash = 5
+            if self.hp <= 0:
+                self.is_dead = True
+                return True # Signal pour le score
+        return False
 
     def update(self, collision_tiles):
-        if not self.active or self.hp <= 0: return
+        if self.is_dead: return
 
-        # Rythme : 0.25s (15 frames) en attaque / 0.75s (45 frames) en pause
-        anim_speed = 15 if self.is_attacking else 45
-
+        speed = 15 if self.is_attacking else 45
         self.anim_timer += 1
-        if self.anim_timer >= anim_speed:
+        if self.anim_timer >= speed:
             self.anim_timer = 0
-            self.frame_index += 1
-            
-            if self.frame_index >= len(self.current_anim):
-                self.frame_index = 0
+            self.frame_index = (self.frame_index + 1) % len(self.current_anim)
+            if self.frame_index == 0:
                 self.is_attacking = not self.is_attacking
                 self.current_anim = self.anim_attack if self.is_attacking else self.anim_pause
-            
             self.image = self.current_anim[self.frame_index]
+            self.mask = pygame.mask.from_surface(self.image)
 
-        # Gravité simple
         self.vel_y += GRAVITY
         self.rect.y += self.vel_y
         for t in collision_tiles:
@@ -100,16 +96,15 @@ class Boss(pygame.sprite.Sprite):
                 if self.vel_y > 0: self.rect.bottom = t.top; self.vel_y = 0
 
     def draw(self, surface, cam_x, cam_y):
-        if self.active and self.hp > 0:
-            draw_x = self.rect.x - cam_x
-            if self.hit_shake > 0:
-                draw_x += math.sin(pygame.time.get_ticks() * 0.5) * 5
-                self.hit_shake -= 1
-            
-            surface.blit(self.image, (draw_x, self.rect.y - cam_y))
-            # Barre de vie
-            pygame.draw.rect(surface, (50, 0, 0), (draw_x, self.rect.y - cam_y - 20, 100, 8))
-            pygame.draw.rect(surface, (0, 255, 120), (draw_x, self.rect.y - cam_y - 20, self.hp * 5, 8))
+        if self.is_dead: return
+        pos = (self.rect.x - cam_x, self.rect.y - cam_y)
+        if self.hit_flash > 0:
+            flash_surf = self.image.copy()
+            flash_surf.fill((255, 255, 255, 255), special_flags=pygame.BLEND_RGBA_MULT)
+            surface.blit(flash_surf, pos)
+            self.hit_flash -= 1
+        else:
+            surface.blit(self.image, pos)
 
 # =================================================================
 # CLASSE JOUEUR
@@ -117,36 +112,52 @@ class Boss(pygame.sprite.Sprite):
 class Player(pygame.sprite.Sprite):
     def __init__(self, x, y):
         super().__init__()
-        self.image = load_and_scale(PLAYER_IMG, 1)
+        self.image = load_img(PLAYER_IMG, 1)
         self.rect = self.image.get_rect(topleft=(x, y))
+        self.mask = pygame.mask.from_surface(self.image)
+        self.hp = 20
+        self.max_hp = 20
+        self.score = 0
+        self.invul_timer = 0
         self.vel_x, self.vel_y = 0, 0
+        self.facing_right = True
         self.on_ground = False
         self.is_on_wall = False
-        self.facing_right = True
         self.dash_cooldown = 0
         self.dash_timer = 0
         self.is_attacking = False
-        self.attack_duration = 0
-        self.attack_rect = pygame.Rect(0, 0, 60, 60)
+        self.atk_frame = 0
 
     def update(self, collision_tiles, jump_tiles, boss):
         keys = pygame.key.get_pressed()
         
-        # --- ATTAQUE ---
-        if (keys[K_x] or keys[K_c]) and self.attack_duration <= 0:
+        # Dégâts par seconde au contact du masque du boss
+        if self.invul_timer > 0: self.invul_timer -= 1
+        if not boss.is_dead:
+            offset = (boss.rect.x - self.rect.x, boss.rect.y - self.rect.y)
+            if self.mask.overlap(boss.mask, offset) and self.invul_timer <= 0:
+                self.hp -= 1
+                self.invul_timer = 60 
+
+        # Attaque stylée (Arc de cercle)
+        if (keys[K_x] or keys[K_c]) and not self.is_attacking:
             self.is_attacking = True
-            self.attack_duration = 20 # Durée de la hitbox
-            if self.facing_right: self.attack_rect.midleft = self.rect.midright
-            else: self.attack_rect.midright = self.rect.midleft
+            self.atk_frame = 12
+            atk_rect = pygame.Rect(0, 0, 80, 80)
+            if self.facing_right: atk_rect.midleft = self.rect.midright
+            else: atk_rect.midright = self.rect.midleft
             
-            if boss.active and self.attack_rect.colliderect(boss.rect):
-                boss.take_damage()
+            if not boss.is_dead:
+                atk_offset = (boss.rect.x - atk_rect.x, boss.rect.y - atk_rect.y)
+                atk_mask = pygame.mask.Mask((80, 80)); atk_mask.fill()
+                if atk_mask.overlap(boss.mask, atk_offset):
+                    if boss.take_damage(): self.score += 1
 
-        if self.attack_duration > 0:
-            self.attack_duration -= 1
-            if self.attack_duration <= 0: self.is_attacking = False
+        if self.is_attacking:
+            self.atk_frame -= 1
+            if self.atk_frame <= 0: self.is_attacking = False
 
-        # --- MOUVEMENTS & DASH ---
+        # Dash & Physique
         if self.dash_cooldown > 0: self.dash_cooldown -= 1
         if keys[K_a] and self.dash_cooldown == 0:
             self.dash_timer, self.dash_cooldown = DASH_DURATION, DASH_COOLDOWN
@@ -170,38 +181,42 @@ class Player(pygame.sprite.Sprite):
             self.vel_y = JUMP_BIG if can_jump_big else JUMP_SMALL
             self.on_ground = False
 
-        # --- COLLISIONS ---
-        self.is_on_wall = False
-        wall_check = self.rect.inflate(4, 0)
-        if not self.on_ground:
-            for t in collision_tiles:
-                if wall_check.colliderect(t): self.is_on_wall = True; break
-
+        # Collisions horizontales
         self.rect.x += self.vel_x
         for t in collision_tiles:
             if self.rect.colliderect(t):
                 if self.vel_x > 0: self.rect.right = t.left
                 else: self.rect.left = t.right
         
+        # Collisions verticales
         self.rect.y += self.vel_y
         self.on_ground = False
+        self.is_on_wall = False
         for t in collision_tiles:
             if self.rect.colliderect(t):
                 if self.vel_y > 0: self.rect.bottom = t.top; self.vel_y, self.on_ground = 0, True
                 else: self.rect.top = t.bottom; self.vel_y = 0
+        
+        if not self.on_ground:
+            wall_check = self.rect.inflate(4, 0)
+            for t in collision_tiles:
+                if wall_check.colliderect(t): self.is_on_wall = True; break
 
     def draw(self, surface, cam_x, cam_y):
-        surface.blit(self.image, (self.rect.x - cam_x, self.rect.y - cam_y))
+        pos = (self.rect.x - cam_x, self.rect.y - cam_y)
+        if self.invul_timer % 10 < 5: surface.blit(self.image, pos)
         if self.is_attacking:
-            pygame.draw.rect(surface, (255, 255, 255), (self.attack_rect.x - cam_x, self.attack_rect.y - cam_y, 60, 60), 2)
+            color = (0, 255, 255)
+            r_atk = pygame.Rect(pos[0] + (20 if self.facing_right else -60), pos[1] - 10, 50, 50)
+            pygame.draw.arc(surface, color, r_atk, -math.pi/2 if self.facing_right else math.pi/2, math.pi/2 if self.facing_right else 3*math.pi/2, 4)
 
 # =================================================================
-# SYSTÈME DE MENU
+# SYSTÈME DE PAUSE STYLISÉ
 # =================================================================
 def show_pause_menu():
     paused = True
     selected = 0
-    options = ["REPRENDRE", "AIDE ET REGLES", "QUITTER"]
+    options = ["REPRENDRE", "AIDE", "QUITTER"]
     overlay = pygame.Surface(INTERNAL_RES, pygame.SRCALPHA)
     overlay.fill((0, 0, 0, 200))
 
@@ -214,31 +229,24 @@ def show_pause_menu():
                 if event.key == K_DOWN: selected = (selected + 1) % len(options)
                 if event.key == K_RETURN:
                     if selected == 0: paused = False
-                    if selected == 1: pass # Aide
                     if selected == 2: pygame.quit(); exit()
 
         render_surface.blit(overlay, (0,0))
         for i, opt in enumerate(options):
             color = (0, 255, 200) if i == selected else (255, 255, 255)
-            prefix = "> " if i == selected else "  "
-            txt = font_small.render(prefix + opt, True, color)
-            render_surface.blit(txt, (INTERNAL_RES[0]//2 - 100, 240 + i * 50))
-        
+            txt = font_small.render("> " + opt if i == selected else opt, True, color)
+            render_surface.blit(txt, (INTERNAL_RES[0]//2 - txt.get_width()//2, 250 + i * 50))
         screen.blit(pygame.transform.scale(render_surface, (WIN_W, WIN_H)), (0,0))
         pygame.display.flip()
         clock.tick(30)
 
 # =================================================================
-# BOUCLE PRINCIPALE
+# MAIN LOOP
 # =================================================================
 def main():
-    try:
-        tmx_data = pytmx.load_pygame(MAP_FILE)
-    except:
-        print("Erreur : Fichier TMX introuvable."); return
-
+    tmx_data = pytmx.load_pygame(MAP_FILE)
     player = Player(100, 100)
-    boss = Boss(30, 20, 32) # Coordonnées tuiles (30, 20)
+    boss = Boss(30, 20, 32)
     
     collision_tiles = []
     jump_tiles = []
@@ -255,18 +263,15 @@ def main():
             if event.type == QUIT: pygame.quit(); exit()
             if event.type == KEYDOWN and event.key == K_ESCAPE: show_pause_menu()
 
-        # Update
         player.update(collision_tiles, jump_tiles, boss)
         boss.update(collision_tiles)
         
-        # Caméra
         cam_x = max(0, min(player.rect.centerx - 400, tmx_data.width * 32 - 800))
         cam_y = max(0, min(player.rect.centery - 300, tmx_data.height * 32 - 600))
 
-        # Dessin
-        render_surface.fill((25, 25, 30))
+        render_surface.fill((20, 20, 25))
         
-        # Rendu Map (Culling)
+        # Rendu Map avec Culling
         start_x, end_x = int(cam_x // 32), int((cam_x + 800) // 32) + 1
         start_y, end_y = int(cam_y // 32), int((cam_y + 600) // 32) + 1
         for layer in tmx_data.visible_layers:
@@ -275,22 +280,27 @@ def main():
                     for y in range(start_y, end_y):
                         if 0 <= x < tmx_data.width and 0 <= y < tmx_data.height:
                             gid = layer.data[y][x]
-                            if gid:
-                                img = tmx_data.get_tile_image_by_gid(gid)
-                                if img: render_surface.blit(img, (x*32 - cam_x, y*32 - cam_y))
+                            if gid: render_surface.blit(tmx_data.get_tile_image_by_gid(gid), (x*32 - cam_x, y*32 - cam_y))
 
         boss.draw(render_surface, cam_x, cam_y)
         player.draw(render_surface, cam_x, cam_y)
 
-        # HUD (Haut à droite)
-        stats = [f"FPS: {int(clock.get_fps())}", 
-                 f"TUILE: {player.rect.x//32}, {player.rect.y//32}", 
-                 f"BOSS HP: {boss.hp}"]
-        for i, s in enumerate(stats):
-            txt = font_hud.render(s, True, (0, 255, 180))
+        # --- HUD BAS MILIEU ---
+        hud_cx, hud_y = INTERNAL_RES[0] // 2, INTERNAL_RES[1] - 50
+        txt_lvl = font_small.render(f"NIVEAU : {player.score}", True, (255, 255, 255))
+        render_surface.blit(txt_lvl, (hud_cx - txt_lvl.get_width()//2, hud_y - 30))
+        
+        bar_w, bar_h = 200, 15
+        pygame.draw.rect(render_surface, (50, 0, 0), (hud_cx - bar_w//2, hud_y, bar_w, bar_h))
+        pygame.draw.rect(render_surface, (0, 255, 100), (hud_cx - bar_w//2, hud_y, int(bar_w * (player.hp/player.max_hp)), bar_h))
+        pygame.draw.rect(render_surface, (255, 255, 255), (hud_cx - bar_w//2, hud_y, bar_w, bar_h), 1)
+
+        # HUD HAUT DROITE
+        tech_stats = [f"FPS: {int(clock.get_fps())}", f"COORDS: {player.rect.x//32}, {player.rect.y//32}"]
+        for i, s in enumerate(tech_stats):
+            txt = font_hud.render(s, True, (0, 255, 150))
             render_surface.blit(txt, (INTERNAL_RES[0] - txt.get_width() - 15, 15 + i * 20))
 
-        # Affichage Final
         screen.blit(pygame.transform.scale(render_surface, (WIN_W, WIN_H)), (0,0))
         pygame.display.flip()
         clock.tick(FPS)
