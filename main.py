@@ -3,7 +3,7 @@ import pytmx       # Pour lire les cartes créées avec le logiciel Tiled
 import math        # Pour les calculs mathématiques (comme l'arc de l'attaque)
 import os          # Pour gérer les dossiers et fichiers sur l'ordinateur
 from pygame.locals import * # Importe les raccourcis clavier (K_UP, K_SPACE, etc.)
-
+from settings import *
 # =================================================================
 # CONFIGURATION GÉNÉRALE : On définit les règles du monde
 # =================================================================
@@ -284,7 +284,22 @@ def main():
         for event in pygame.event.get():
             if event.type == QUIT: pygame.quit(); exit()
             if event.type == KEYDOWN and event.key == K_ESCAPE: show_pause_menu()
+        # --- INFOS DE DÉVELOPPEMENT ---
+        debug_infos = [
+            f"FPS: {int(clock.get_fps())}",
+            f"Player Pos: {player.rect.x}, {player.rect.y}",
+            f"Tile Coords: {player.rect.x // 32}, {player.rect.y // 32}",
+            f"On Ground: {player.on_ground}",
+            f"On Wall: {player.is_on_wall}",
+            f"Dash Cooldown: {player.dash_cooldown}"
+        ]
 
+        for i, info in enumerate(debug_infos):
+            text_surf = font_hud.render(info, True, (255, 255, 255))
+            # On les aligne à droite (800 - largeur du texte - marge)
+            x_pos = INTERNAL_RES[0] - text_surf.get_width() - 10
+            render_surface.blit(text_surf, (x_pos, 10 + i * 20))
+        
         # Mise à jour des personnages
         player.update(collision_tiles, jump_tiles, boss)
         boss.update(collision_tiles)
@@ -311,10 +326,35 @@ def main():
         boss.draw(render_surface, cam_x, cam_y)
         player.draw(render_surface, cam_x, cam_y)
 
+        # --- BARRE DE VIE DU BOSS ---
+        if not boss.is_dead:
+            # Position de la barre au-dessus du boss
+            bar_x = boss.rect.x - cam_x
+            bar_y = boss.rect.y - cam_y - 20
+            # Dessin du fond (rouge sombre)
+            pygame.draw.rect(render_surface, (100, 0, 0), (bar_x, bar_y, 100, 10))
+            # Dessin de la vie actuelle (vert)
+            health_width = int(100 * (boss.hp / 50)) # 50 étant ses PV max
+            pygame.draw.rect(render_surface, (0, 255, 0), (bar_x, bar_y, health_width, 10))
+
         # --- DESSIN DU HUD (Interface : Score et Vie) ---
         hud_cx, hud_y = INTERNAL_RES[0] // 2, INTERNAL_RES[1] - 50
         txt_lvl = font_small.render(f"NIVEAU : {player.score}", True, (255, 255, 255))
         render_surface.blit(txt_lvl, (hud_cx - txt_lvl.get_width()//2, hud_y - 30))
+        # --- BARRE D'EXPÉRIENCE ---
+        exp_bar_w = 200
+        exp_x = INTERNAL_RES[0] // 2 - exp_bar_w // 2
+        exp_y = INTERNAL_RES[1] - 80 # Juste au-dessus de la barre de vie
+
+        # Texte du niveau
+        txt_lvl = font_small.render(f"LVL : {player.level}", True, (255, 215, 0))
+        render_surface.blit(txt_lvl, (exp_x - 60, exp_y - 5))
+
+        # Fond de la barre d'exp (gris)
+        pygame.draw.rect(render_surface, (50, 50, 50), (exp_x, exp_y, exp_bar_w, 10))
+        # Barre d'exp (bleu ciel)
+        current_exp_w = int(exp_bar_w * (player.exp / player.exp_needed))
+        pygame.draw.rect(render_surface, (0, 191, 255), (exp_x, exp_y, current_exp_w, 10))
         
         # Dessin de la barre de vie
         bar_w, bar_h = 200, 15
