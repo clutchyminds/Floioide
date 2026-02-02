@@ -4,27 +4,33 @@ import math
 import os
 from pygame.locals import *
 
+
 # =================================================================
-# CONFIGURATION GÉNÉRALE : On définit les règles du monde
+# CONFIG GÉNÉRALE
 # =================================================================
 pygame.init()
-WIN_W, WIN_H = 1280, 720          # Taille de la fenêtre visible
-INTERNAL_RES = (800, 600)         # Résolution interne (plus petite pour un style rétro)
+WIN_W, WIN_H = 1280, 720
+INTERNAL_RES = (800, 600)
 screen = pygame.display.set_mode((WIN_W, WIN_H), DOUBLEBUF | HWSURFACE)
-render_surface = pygame.Surface(INTERNAL_RES)  # Surface sur laquelle on dessine avant de l'agrandir
+render_surface = pygame.Surface(INTERNAL_RES)
 
-FPS = 60                          # Vitesse du jeu (60 images par seconde)
-GRAVITY = 0.8                     # Force qui attire les personnages vers le bas
-JUMP_SMALL, JUMP_BIG = -5, -15    # Puissance des sauts (normal et sur zone spéciale)
-MOVE_SPEED = 5                    # Vitesse de marche
-DASH_SPEED, DASH_DURATION, DASH_COOLDOWN = 20, 10, 300  # Réglages de la charge rapide
-CLIMB_SPEED = 4                   # Vitesse pour grimper aux murs
+FPS = 60
+GRAVITY = 0.8
+JUMP_SMALL, JUMP_BIG = -5, -15
+MOVE_SPEED = 5
+DASH_SPEED, DASH_DURATION, DASH_COOLDOWN = 20, 10, 300
+CLIMB_SPEED = 4
 
 clock = pygame.time.Clock()
 font_hud = pygame.font.Font(None, 22)
 font_small = pygame.font.Font(None, 30)
 
-# --- GESTION DES DOSSIERS / FICHIERS ---
+# --- MODES DEBUG / GAMEPLAY ---
+FLY_MODE = False          # voler
+BREAK_MODE = False        # casser des blocs
+PLAYER_SPEED_MULT = 1.0   # multiplicateur de vitesse
+
+# --- DOSSIERS / FICHIERS ---
 ASSETS_DIR = "assets"
 ATTACK_DIR = os.path.join(ASSETS_DIR, "attaque")
 PLAYER_IMG = os.path.join(ASSETS_DIR, "player", "player.png")
@@ -37,8 +43,8 @@ PLANT_ATTACK_FRAMES = [
     for i in range(16)
 ]
 
-# 0.2 s entre chaque frame
-ATTACK_FRAME_DURATION = 200  # ms [web:31][web:34]
+# 0.1 s entre chaque frame = 100 ms
+ATTACK_FRAME_DURATION = 100  # ms
 
 
 def load_img(path, scale):
@@ -163,12 +169,12 @@ class Player(pygame.sprite.Sprite):
         self.atk_frame_index = 0
         self.atk_start_time = 0
 
-        # Chargement brut, puis scale en ~40x40 (plus grand que 16x23)
+        # Chargement brut, puis scale plus grand (16x16 -> 48x48)
         base_frames = [
             pygame.image.load(path).convert_alpha()
             for path in PLANT_ATTACK_FRAMES
         ]
-        SCALE = 40 / 16
+        SCALE = 3  # 16 * 3 = 48
         ATTACK_SIZE = (int(16 * SCALE), int(16 * SCALE))
         self.plant_frames = [
             pygame.transform.scale(img, ATTACK_SIZE)
@@ -234,6 +240,8 @@ class Player(pygame.sprite.Sprite):
                 self.add_exp(5)
 
     def update(self, collision_tiles, jump_tiles, boss):
+        global FLY_MODE, BREAK_MODE, PLAYER_SPEED_MULT
+
         keys = pygame.key.get_pressed()
 
         if self.invul_timer > 0:
@@ -255,6 +263,7 @@ class Player(pygame.sprite.Sprite):
         if keys[K_a] and self.dash_cooldown == 0:
             self.dash_timer, self.dash_cooldown = DASH_DURATION, DASH_COOLDOWN
 
+        # Gravité / vol
         if self.is_on_wall and not self.on_ground:
             self.vel_y = 0
             if keys[K_UP] or keys[K_z]:
@@ -262,23 +271,33 @@ class Player(pygame.sprite.Sprite):
             elif keys[K_DOWN] or keys[K_s]:
                 self.vel_y = CLIMB_SPEED
         else:
-            self.vel_y += GRAVITY
+            if FLY_MODE:
+                self.vel_y = (keys[K_DOWN] - keys[K_UP] + keys[K_s] - keys[K_z]) * MOVE_SPEED
+            else:
+                self.vel_y += GRAVITY
 
+        # Vitesse horizontale avec multiplicateur
         if self.dash_timer > 0:
             self.vel_x = DASH_SPEED if self.facing_right else -DASH_SPEED
             self.vel_y = 0
             self.dash_timer -= 1
         else:
-            self.vel_x = (keys[K_RIGHT] - keys[K_LEFT]) * MOVE_SPEED
+            speed = MOVE_SPEED * PLAYER_SPEED_MULT
+            self.vel_x = (keys[K_RIGHT] - keys[K_LEFT]) * speed
             if self.vel_x > 0:
                 self.facing_right = True
             elif self.vel_x < 0:
                 self.facing_right = False
 
-        if (keys[K_SPACE] or keys[K_UP] or keys[K_z]) and self.on_ground:
+        if (keys[K_SPACE] or keys[K_UP] or keys[K_z]) and self.on_ground and not FLY_MODE:
             can_jump_big = any(self.rect.colliderect(jt) for jt in jump_tiles)
             self.vel_y = JUMP_BIG if can_jump_big else JUMP_SMALL
             self.on_ground = False
+
+        # Casser des blocs autour du joueur si BREAK_MODE + clic gauche
+        if BREAK_MODE and pygame.mouse.get_pressed()[0]:
+            hit_rect = self.rect.inflate(20, 20)
+            collision_tiles[:] = [t for t in collision_tiles if not t.colliderect(hit_rect)]
 
         self.rect.x += self.vel_x
         for t in collision_tiles:
@@ -327,12 +346,21 @@ class Player(pygame.sprite.Sprite):
 
 
 # =================================================================
-# SYSTÈME DE PAUSE
+# MENU PAUSE / DEBUG
 # =================================================================
 def show_pause_menu():
+    global FLY_MODE, BREAK_MODE, PLAYER_SPEED_MULT
+
     paused = True
     selected = 0
-    options = ["REPRENDRE", "AIDE", "QUITTER"]
+    options = [
+        "REPRENDRE",
+        "TOGGLE FLY MODE",
+        "TOGGLE BREAK MODE",
+        "VITESSE +",
+        "VITESSE -",
+        "QUITTER"
+    ]
     overlay = pygame.Surface(INTERNAL_RES, pygame.SRCALPHA)
     overlay.fill((0, 0, 0, 200))
 
@@ -349,20 +377,49 @@ def show_pause_menu():
                 if event.key == K_DOWN:
                     selected = (selected + 1) % len(options)
                 if event.key == K_RETURN:
-                    if selected == 0:
+                    if options[selected] == "REPRENDRE":
                         paused = False
-                    if selected == 2:
+                    elif options[selected] == "TOGGLE FLY MODE":
+                        FLY_MODE = not FLY_MODE
+                    elif options[selected] == "TOGGLE BREAK MODE":
+                        BREAK_MODE = not BREAK_MODE
+                    elif options[selected] == "VITESSE +":
+                        PLAYER_SPEED_MULT = min(3.0, PLAYER_SPEED_MULT + 0.5)
+                    elif options[selected] == "VITESSE -":
+                        PLAYER_SPEED_MULT = max(0.5, PLAYER_SPEED_MULT - 0.5)
+                    elif options[selected] == "QUITTER":
                         pygame.quit()
                         exit()
 
         render_surface.blit(overlay, (0, 0))
+
+        title_txt = font_small.render("MENU DEBUG", True, (0, 255, 200))
+        render_surface.blit(
+            title_txt,
+            (INTERNAL_RES[0] // 2 - title_txt.get_width() // 2, 150)
+        )
+
+        status_lines = [
+            f"Fly: {'ON' if FLY_MODE else 'OFF'}",
+            f"Break: {'ON' if BREAK_MODE else 'OFF'}",
+            f"Speed x{PLAYER_SPEED_MULT:.1f}",
+        ]
+        for i, s in enumerate(status_lines):
+            st = font_hud.render(s, True, (200, 200, 200))
+            render_surface.blit(st, (50, 50 + i * 20))
+
         for i, opt in enumerate(options):
             color = (0, 255, 200) if i == selected else (255, 255, 255)
-            txt = font_small.render("> " + opt if i == selected else opt, True, color)
+            txt = font_small.render(
+                "> " + opt if i == selected else opt,
+                True,
+                color
+            )
             render_surface.blit(
                 txt,
-                (INTERNAL_RES[0] // 2 - txt.get_width() // 2, 250 + i * 50)
+                (INTERNAL_RES[0] // 2 - txt.get_width() // 2, 220 + i * 40)
             )
+
         screen.blit(pygame.transform.scale(render_surface, (WIN_W, WIN_H)), (0, 0))
         pygame.display.flip()
         clock.tick(30)
@@ -374,7 +431,7 @@ def show_pause_menu():
 def main():
     tmx_data = pytmx.load_pygame(MAP_FILE)
     player = Player(100, 100)
-    boss = Boss(29, 92, 32)
+    boss = Boss(29, 92, 32)  # boss en 29, 92
 
     collision_tiles = []
     jump_tiles = []
@@ -455,13 +512,11 @@ def main():
         bar_x = INTERNAL_RES[0] - bar_w - margin
         bar_y = margin
 
-        # Texte du level au-dessus
         txt_lvl = font_small.render(f"LVL : {player.level}", True, (255, 215, 0))
         lvl_x = INTERNAL_RES[0] - txt_lvl.get_width() - margin
         lvl_y = bar_y - txt_lvl.get_height() - 5
         render_surface.blit(txt_lvl, (lvl_x, lvl_y))
 
-        # Barre de vie
         pygame.draw.rect(
             render_surface,
             (50, 0, 0),
@@ -479,7 +534,7 @@ def main():
             1
         )
 
-        # Barre d’XP centrée en bas (tu peux la déplacer si tu veux)
+        # Barre d’XP centrée en bas
         exp_bar_w = 200
         exp_x = INTERNAL_RES[0] // 2 - exp_bar_w // 2
         exp_y = INTERNAL_RES[1] - 80
