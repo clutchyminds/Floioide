@@ -3,6 +3,51 @@ import math
 import settings
 import os
 
+class RainParticle:
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
+        import random
+        self.vy = random.uniform(10, 15) # Tombe très vite
+        self.vx = -2 # Un peu de vent vers la gauche
+        self.lifetime = 100
+        self.length = random.randint(5, 10) # La goutte est un trait
+
+    def update(self):
+        self.x += self.vx
+        self.y += self.vy
+        self.lifetime -= 1
+
+    def draw(self, surface, cam_x, cam_y):
+        # On dessine une ligne pour faire un effet de pluie
+        pygame.draw.line(surface, (150, 150, 255), 
+                         (self.x - cam_x, self.y - cam_y), 
+                         (self.x - cam_x, self.y - cam_y + self.length), 1)
+
+class Particle:
+    def __init__(self, x, y, color):
+        self.x = x
+        self.y = y
+        self.color = color
+        # On donne une direction au hasard (vers le haut, gauche ou droite)
+        import random
+        self.vx = random.uniform(-1, 1) # Vitesse horizontale aléatoire
+        self.vy = random.uniform(-1, 0) # Vitesse verticale (monte un peu)
+        self.lifetime = 3000 # La particule va vivre 20 images (frames)
+        self.radius = random.randint(6, 12) # Taille de départ
+
+    def update(self):
+        self.x += self.vx
+        self.y += self.vy
+        self.lifetime -= 1 # Elle vieillit
+        if self.radius > 0.1:
+            self.radius -= 0.2 # Elle rétrécit progressivement
+
+    def draw(self, surface, cam_x, cam_y):
+        # On dessine un petit cercle à la position de la particule
+        pygame.draw.circle(surface, self.color, (int(self.x - cam_x), int(self.y - cam_y)), int(self.radius))
+
+
 # --- LA CLASSE BOSS ---
 class Boss(pygame.sprite.Sprite):
     def __init__(self, tile_x, tile_y, tile_size):
@@ -149,11 +194,19 @@ class Player(pygame.sprite.Sprite):
         self.image = pygame.transform.flip(new_img, not self.facing_right, False)
         self.mask = pygame.mask.from_surface(self.image)
 
-    def update(self, keys, mouse_buttons, tiles, boss, m_world):
+    def update(self, keys, mouse_buttons, tiles, boss, m_world, particles):
         # Gestion des chronomètres (timers)
         if self.invul_timer > 0: self.invul_timer -= 1
         if self.dash_cooldown > 0: self.dash_cooldown -= 1
         if self.jump_cooldown > 0: self.jump_cooldown -= 1
+        # Si on marche au sol, on crée de la poussière sous les pieds
+        
+        if self.on_ground and abs(self.vel_x) > 0:
+            particles.append(Particle(self.hitbox.centerx, self.hitbox.bottom, (0, 250, 0)))
+
+        # Une traînée bleue pendant le dash
+        if self.dash_timer > 0:
+            particles.append(Particle(self.hitbox.centerx, self.hitbox.centery, (0, 150, 255)))
 
         # ATTAQUE (CLIC DROIT)
         if mouse_buttons[2] and not self.is_attacking:

@@ -1,8 +1,10 @@
 import pygame
 import pytmx # Pour lire les fichiers de carte Tiled (.tmx)
 import settings
-from entities import Player, Boss
+from entities import Player, Boss, Particle, RainParticle
 import ui
+import random
+
 
 def main():
     pygame.init()
@@ -21,6 +23,7 @@ def main():
         return tm, p, b
 
     tmx_data, player, boss = reset_game()
+    particles = [] # C'est notre sac à poussière
     collision_tiles, spawn_trigger_tiles = [], []
     
     # Lecture des couches de la carte Tiled
@@ -38,6 +41,7 @@ def main():
 
     # BOUCLE DE JEU (Tourne 60 fois par seconde)
     while running:
+
         # CALCUL DE LA CAMÉRA (suit le joueur)
         cam_x = max(0, min(player.rect.centerx - 400, tmx_data.width*32 - 800))
         cam_y = max(0, min(player.rect.centery - 300, tmx_data.height*32 - 600))
@@ -60,7 +64,8 @@ def main():
                 if player.rect.colliderect(t): boss_spawned = True; break
 
         # MISE À JOUR DES PERSONNAGES
-        player.update(pygame.key.get_pressed(), pygame.mouse.get_pressed(), collision_tiles, boss, (mx, my))
+
+        player.update(pygame.key.get_pressed(), pygame.mouse.get_pressed(), collision_tiles, boss, (mx, my), particles)
         if boss_spawned: boss.update(collision_tiles, player)
         
         # MORT DU JOUEUR
@@ -69,7 +74,7 @@ def main():
             tmx_data, player, boss = reset_game(); boss_spawned = False
 
         # --- DESSIN (RENDERING) ---
-        render_surface.fill((25, 25, 30)) # Efface l'écran avec un gris foncé
+        render_surface.fill((128, 128, 128)) # Efface l'écran avec un gris foncé
         
         # Dessin du décor (on ne dessine que ce qui est visible à l'écran pour gagner du FPS)
         for layer in tmx_data.visible_layers:
@@ -83,7 +88,23 @@ def main():
         # Dessin des personnages
         if boss_spawned: boss.draw(render_surface, cam_x, cam_y)
         player.draw(render_surface, cam_x, cam_y)
+        # COUCHE 4 : LES PARTICULES (Juste ici, au-dessus du reste !)
+        for p in particles[:]:
+            p.update()
+            p.draw(render_surface, cam_x, cam_y)
+            if p.lifetime <= 0:
+                particles.remove(p)
         
+        RAIN_HEIGHT_LIMIT = 10000 #en pxl et pas en tuile
+
+        if cam_y < RAIN_HEIGHT_LIMIT:
+            for _ in range(5): # On crée 5 gouttes par image
+                # On génère un X aléatoire entre le bord gauche et droit de la caméra
+                # On ajoute 200 à droite pour anticiper le vent qui pousse vers la gauche
+                spawn_x = random.randint(int(cam_x), int(cam_x + 850))
+                spawn_y = cam_y - 20 # On fait apparaître juste au-dessus de l'écran
+                particles.append(RainParticle(spawn_x, spawn_y))
+
         # Dessin du HUD (Interface)
         ui.draw_hud(render_surface, player, boss, font_hud, font_big, clock, boss_spawned)
         if show_f3: ui.draw_debug_f3(render_surface, player, clock, font_hud)
