@@ -7,19 +7,39 @@ class RainParticle:
     def __init__(self, x, y):
         self.x = x
         self.y = y
+        # On importe random une seule fois au début ou on utilise un import global
         import random
-        self.vy = random.uniform(10, 15) # Tombe très vite
-        self.vx = -2 # Un peu de vent vers la gauche
+        self.vy = random.uniform(10, 15)
+        self.vx = -2
         self.lifetime = 100
-        self.length = random.randint(5, 10) # La goutte est un trait
+        self.length = random.randint(5, 10)
+        self.alive = True
 
-    def update(self):
+    def update(self, tiles, particles_list):
         self.x += self.vx
         self.y += self.vy
         self.lifetime -= 1
+        
+        # OPTIMISATION : Collision mathématique simple au lieu de Rect.colliderect
+        # On ne teste que les tuiles proches du joueur pour économiser les calculs
+        for tile in tiles:
+            # Si le bas de la goutte est à l'intérieur d'une tuile
+            if tile.x < self.x < tile.x + 32:
+                if tile.y < self.y + self.length < tile.y + 32:
+                    # EFFET D'EXPLOSION (Splash)
+                    import random
+                    for _ in range(2): # On réduit à 2 gouttes de splash pour gagner en FPS
+                        splash = Particle(self.x, self.y, (180, 200, 255)) 
+                        splash.vx = random.uniform(-2, 2)
+                        splash.vy = random.uniform(-2, -1)
+                        splash.radius = random.randint(1, 2)
+                        splash.lifetime = 10
+                        particles_list.append(splash)
+                    
+                    self.alive = False 
+                    break
 
     def draw(self, surface, cam_x, cam_y):
-        # On dessine une ligne pour faire un effet de pluie
         pygame.draw.line(surface, (150, 150, 255), 
                          (self.x - cam_x, self.y - cam_y), 
                          (self.x - cam_x, self.y - cam_y + self.length), 1)

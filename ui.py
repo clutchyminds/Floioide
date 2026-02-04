@@ -1,64 +1,46 @@
 import pygame
-import settings
 
-# Fonction pour écrire du texte avec une petite ombre portée derrière
-def ui_draw_text(surface, text, font, color, pos):
-    # On dessine d'abord le texte en noir décalé de 2 pixels (l'ombre)
-    shadow = font.render(text, True, (20, 20, 20))
-    surface.blit(shadow, (pos[0]+2, pos[1]+2))
-    # On dessine le texte principal par-dessus
-    img = font.render(text, True, color)
-    surface.blit(img, pos)
+def draw_hud(surface, player, boss, font_hud, font_big, clock, boss_spawned):
+    # Barre HP (En haut à droite)
+    pygame.draw.rect(surface, (30, 30, 30), (580, 25, 200, 12))
+    hp_w = max(0, (player.hp / 20) * 200)
+    pygame.draw.rect(surface, (46, 204, 113), (580, 25, hp_w, 12))
+    surface.blit(font_hud.render(f"HP: {player.hp}", True, (255, 255, 255)), (580, 8))
 
-# Dessine les barres de vie et de dash en haut à gauche
-def draw_hud(surface, player, boss, font, font_big, clock, boss_spawned):
-    # Barre de vie du Joueur (Fond gris, puis rectangle vert)
-    pygame.draw.rect(surface, (50, 50, 50), (20, 20, 150, 15))
-    hp_w = (player.hp / player.max_hp) * 150 # Calcul de la largeur selon les PV
-    pygame.draw.rect(surface, settings.GREEN, (20, 20, hp_w, 15))
-    ui_draw_text(surface, f"HP: {player.hp}", font, settings.WHITE, (25, 18))
+    # Barre Dash
+    pygame.draw.rect(surface, (30, 30, 30), (580, 42, 200, 4))
+    dash_w = (player.dash_cooldown / 60) * 200
+    pygame.draw.rect(surface, (52, 152, 219), (580, 42, 200 - dash_w, 4))
 
-    # Petite barre de Dash (Bleue si prêt, Grise si en attente)
-    pygame.draw.rect(surface, (50, 50, 50), (20, 40, 100, 8))
-    dash_ready = max(0, settings.DASH_COOLDOWN - player.dash_cooldown)
-    dash_w = (dash_ready / settings.DASH_COOLDOWN) * 100
-    c = settings.BLUE_DASH if player.dash_cooldown <= 0 else (100, 100, 100)
-    pygame.draw.rect(surface, c, (20, 40, dash_w, 8))
+    if boss_spawned:
+        pygame.draw.rect(surface, (50, 0, 0), (200, 560, 400, 15))
+        b_w = (boss.hp / 100) * 400
+        pygame.draw.rect(surface, (231, 76, 60), (200, 560, b_w, 15))
 
-    # Si le boss est là, on affiche sa grande barre de vie en bas
-    if boss_spawned and not boss.is_dead:
-        pygame.draw.rect(surface, (50, 50, 50), (200, 550, 400, 20))
-        boss_hp_w = (boss.hp / 50) * 400
-        pygame.draw.rect(surface, settings.RED, (200, 550, boss_hp_w, 20))
-        ui_draw_text(surface, "BOSS - THE TEST", font, settings.WHITE, (320, 525))
+def show_pause_menu(screen, font):
+    paused = True
+    overlay = pygame.Surface(screen.get_size(), pygame.SRCALPHA)
+    overlay.fill((0, 0, 0, 200))
+    while paused:
+        for e in pygame.event.get():
+            if e.type == pygame.QUIT: pygame.quit(); exit()
+            if e.type == pygame.KEYDOWN and e.key == pygame.K_ESCAPE: paused = False
+        screen.blit(overlay, (0, 0))
+        txt = font.render("PAUSE", True, (255, 255, 255))
+        screen.blit(txt, (screen.get_width()//2 - 60, screen.get_height()//2))
+        pygame.display.flip()
 
-# Menu de débogage F3 (affiche les données techniques)
-def draw_debug_f3(surface, player, clock, font):
-    debug_surf = pygame.Surface((250, 140), pygame.SRCALPHA)
-    debug_surf.fill(settings.DEBUG_BG)
-    surface.blit(debug_surf, (10, 50))
-    info = [
-        f"FPS: {int(clock.get_fps())}",
-        f"TILE POS: {player.rect.x // 32} / {player.rect.y // 32}", # Position en cases
-        f"DASH: {player.dash_cooldown}f",
-        f"GROUND: {player.on_ground}"
-    ]
-    for i, line in enumerate(info):
-        img = font.render(line, True, settings.WHITE)
-        surface.blit(img, (20, 60 + i * 20))
-
-# Écran rouge quand on meurt
-def show_game_over(screen, font_big):
-    overlay = pygame.Surface((settings.WIN_W, settings.WIN_H), pygame.SRCALPHA)
-    overlay.fill((150, 0, 0, 150)); screen.blit(overlay, (0, 0))
-    msg = font_big.render("GAME OVER", True, settings.WHITE)
-    retry = font_big.render("R pour Recommencer", True, settings.GOLD)
-    screen.blit(msg, (settings.WIN_W//2 - msg.get_width()//2, 250))
-    screen.blit(retry, (settings.WIN_W//2 - retry.get_width()//2, 350))
+def show_game_over(screen, font):
+    screen.fill((0, 0, 0))
+    txt = font.render("GAME OVER - ESPACE", True, (200, 0, 0))
+    screen.blit(txt, (200, 300))
     pygame.display.flip()
-    # On bloque le jeu ici jusqu'à ce que le joueur appuie sur R
-    waiting = True
-    while waiting:
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT: pygame.quit(); exit()
-            if event.type == pygame.KEYDOWN and event.key == pygame.K_r: waiting = False
+    wait = True
+    while wait:
+        for e in pygame.event.get():
+            if e.type == pygame.QUIT: pygame.quit(); exit()
+            if e.type == pygame.KEYDOWN and e.key == pygame.K_SPACE: wait = False
+
+def draw_debug_f3(surface, player, clock, font):
+    fps = str(int(clock.get_fps()))
+    surface.blit(font.render(f"FPS: {fps}", True, (255, 255, 255)), (10, 10))
