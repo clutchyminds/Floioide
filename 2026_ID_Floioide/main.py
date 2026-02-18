@@ -15,6 +15,30 @@ CHEMIN_BASE = os.path.dirname(os.path.abspath(__file__))
 # On pointe vers data/maps
 DOSSIER_MAPS = os.path.join(CHEMIN_BASE, "data", "maps")
 
+# Classe pour les ennemis
+
+class EnnemiAnime(arcade.Sprite):
+    def __init__(self, images_annimation, position_x, position_y):
+        super.__init__()
+        self.textures = images_annimation
+        self.texture = self.textures[0]
+        self.center_x = position_x
+        self.center_y = position_y
+        self.frame_actuelle = 0
+        self.temps_écoulé = 0
+        self.vitesse = 2
+        self.distance_detection = 400
+
+    def update_annimation(self, delta_time):
+        self.temps_écoulé += delta_time
+        if self.temps_écoulé > 0.15:
+            self.temps_écoulé = 0
+            self.frame_actuelle +=1
+            if self.frame_actuelle >= len(self.textures):
+                self.frame_actuelle = 0
+            self.texture = self.textures[self.frame_actuelle]
+ 
+
 # SECTION 1 : L ECRAN DE MENU
 class EcranMenu(arcade.View):
     def on_show_view(self):
@@ -89,6 +113,14 @@ class MonJeu(arcade.View):
                 walls=self.tiroir_murs
             )
 
+
+        texture_test = [
+            arcade.load_texture("data/mobtest/avancer (1).png"),
+            arcade.load_texture("data/mobtest/avancer (2).png")
+        ]
+        mon_mob_test = EnnemiAnime(texture_test, 29, 93)
+        self.tiroir_petits.append(mon_mob_test)
+
     def on_draw(self):
         self.clear()
         self.oeil_qui_suit.use()
@@ -150,6 +182,8 @@ class MonJeu(arcade.View):
     def on_key_release(self, touche, modificateurs):
         if touche == arcade.key.LEFT or touche == arcade.key.RIGHT:
             self.fleur_perso.change_x = 0
+
+    
 
 def main():
     fenetre = arcade.Window(FENETRE_LARGEUR, FENETRE_HAUTEUR, NOM_DU_JEU)
