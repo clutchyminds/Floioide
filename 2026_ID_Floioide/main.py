@@ -1,119 +1,161 @@
-# PROJET : Floioide
-# AUTEURS : Thomas, Victor, Laure, Corentin
+# PROJET FLOÏOÏDE
+# Equipe : Thomas, Victor, Laure et Corentin
 
 import arcade
 import os
 
-# --- LES RÉGLAGES DU JEU ---
-LARGEUR = 1280
-HAUTEUR = 720
-TITRE = "Floioide"
+# REGLAGES DE LA FENETRE
+FENETRE_LARGEUR = 1280
+FENETRE_HAUTEUR = 720
+NOM_DU_JEU = "FLOÏOÏDE"
 
-class MonJeu(arcade.Window):
+# GESTION DES CHEMINS
+# On trouve ou est range ce fichier sur ton PC
+CHEMIN_BASE = os.path.dirname(os.path.abspath(__file__))
+# On pointe vers data/maps
+DOSSIER_MAPS = os.path.join(CHEMIN_BASE, "data", "maps")
+
+# SECTION 1 : L ECRAN DE MENU
+class EcranMenu(arcade.View):
+    def on_show_view(self):
+        arcade.set_background_color(arcade.color.DARK_SLATE_GRAY)
+
+    def on_draw(self):
+        self.clear()
+        arcade.draw_text(NOM_DU_JEU, FENETRE_LARGEUR/2, 500, arcade.color.GREEN, 80, anchor_x="center")
+        arcade.draw_text("Appuie sur ENTREE pour jouer", FENETRE_LARGEUR/2, 350, arcade.color.WHITE, 20, anchor_x="center")
+
+    def on_key_press(self, touche, modificateurs):
+        if touche == arcade.key.ENTER:
+            le_jeu = MonJeu()
+            le_jeu.setup()
+            self.window.show_view(le_jeu)
+
+# SECTION 2 : LE COEUR DU JEU
+class MonJeu(arcade.View):
     def __init__(self):
-        # On crée la fenêtre du jeu
-        super().__init__(LARGEUR, HAUTEUR, TITRE)
+        super().__init__()
         
-        # On force l'ordinateur à chercher les images dans le bon dossier
-        # C'est obligatoire pour que le jeu marche sur tous les PC (Règlement Art 2.2.3)
-        chemin_du_fichier = os.path.dirname(os.path.abspath(__file__))
-        os.chdir(chemin_du_fichier)
-
-        # On crée les "tiroirs" pour ranger nos objets
-        self.liste_joueur = None  # Pour ranger la fleur
-        self.liste_murs = None    # Pour ranger le sol et les murs
+        # Les tiroirs (SpriteLists) - On les met a None (vide) au debut
+        self.tiroir_fleur = None
+        self.tiroir_murs = None
+        self.tiroir_arriere = None
+        self.tiroir_devant = None
+        self.tiroir_boss = None
         
-        # La variable qui contiendra notre personnage
-        self.fleur = None
+        self.fleur_perso = None
         
-        # On crée deux caméras
-        self.camera_jeu = None    # Celle qui suit la fleur (Thomas)
-        self.camera_hud = None    # Celle qui reste fixe pour le score (Laure)
-
-        # Le moteur qui gère la gravité et les chocs
+        # Les cameras (les yeux du jeu)
+        self.oeil_qui_suit = arcade.camera.Camera2D()
+        self.oeil_fixe = arcade.camera.Camera2D()
+        
+        # Stats de Laure
+        self.vie = 100
+        self.eau = 100 
+        
+        # Variables de Thomas
+        self.vitesse_dash = 0
         self.moteur_physique = None
 
     def setup(self):
-        """ Cette partie prépare le jeu au début """
+        # 1. On prepare la fleur
+        self.tiroir_fleur = arcade.SpriteList()
+        self.fleur_perso = arcade.Sprite(":resources:images/animated_characters/female_adventurer/femaleAdventurer_idle.png", 0.5)
+        self.fleur_perso.center_x = 200
+        self.fleur_perso.center_y = 300
+        self.tiroir_fleur.append(self.fleur_perso)
+
+        # 2. On charge la map de Victor
+        chemin_ma_map = os.path.join(DOSSIER_MAPS, "map.tmj")
         
-        # On initialise nos tiroirs (Listes de Sprites)
-        self.liste_joueur = arcade.SpriteList()
-        self.liste_murs = arcade.SpriteList()
+        # On essaie de charger la map. Si le fichier n'existe pas, ca affichera une erreur plus claire.
+        try:
+            ma_map_tiled = arcade.load_tilemap(chemin_ma_map, scaling=2)
+            
+            # On remplit les tiroirs seulement si les calques existent dans Tiled
+            # On utilise .get() pour eviter que le programme plante si le nom est mal ecrit
+            self.tiroir_murs = ma_map_tiled.sprite_lists.get("hit-box")
+            self.tiroir_arriere = ma_map_tiled.sprite_lists.get("base")
+            # self.tiroir_devant = ma_map_tiled.sprite_lists.get("Decor_Devant")
+            # self.tiroir_boss = ma_map_tiled.sprite_lists.get("Boss_Layer")
+        except Exception as e:
+            print(f"Erreur de chargement : {e}")
 
-        # On installe les caméras (Nouvelle version Arcade 3.0)
-        self.camera_jeu = arcade.camera.Camera2D()
-        self.camera_hud = arcade.camera.Camera2D()
-
-        # --- CRÉATION DE LA FLEUR (Thomas) ---
-        # On utilise une image de base fournie par Arcade pour tester
-        self.fleur = arcade.Sprite(":resources:images/animated_characters/female_adventurer/femaleAdventurer_idle.png", 0.5)
-        self.fleur.center_x = 100 # Position de départ à gauche
-        self.fleur.center_y = 150 # Position de départ en hauteur
-        self.liste_joueur.append(self.fleur)
-        
-        # --- CRÉATION DU SOL (Victor) ---
-        # On crée une ligne de sol simple pour le moment
-        for x in range(0, 2000, 64):
-            mur = arcade.Sprite(":resources:images/tiles/grassMid.png", 0.5)
-            mur.center_x = x
-            mur.center_y = 32
-            self.liste_murs.append(mur)
-
-        # --- INSTALLATION DU MOTEUR (Thomas) ---
-        # On dit au moteur : la fleur subit la gravité et s'arrête contre les murs
-        self.moteur_physique = arcade.PhysicsEnginePlatformer(
-            self.fleur, gravity_constant=0.5, walls=self.liste_murs
-        )
+        # 3. On branche la physique (On verifie que le tiroir murs n'est pas vide)
+        if self.tiroir_murs is not None:
+            self.moteur_physique = arcade.PhysicsEnginePlatformer(
+                self.fleur_perso, 
+                gravity_constant=0.5, 
+                walls=self.tiroir_murs
+            )
 
     def on_draw(self):
-        """ Cette partie dessine tout à l'écran (60 fois par seconde) """
-        self.clear() # On efface l'écran avant de redessiner
+        self.clear()
+        self.oeil_qui_suit.use()
+        
+        # SECURITE : On dessine les tiroirs seulement s'ils ne sont pas vides (None)
+        if self.tiroir_arriere:
+            self.tiroir_arriere.draw()
+            
+        if self.tiroir_murs:
+            self.tiroir_murs.draw()
+            
+        if self.tiroir_boss:
+            self.tiroir_boss.draw()
+            
+        self.tiroir_fleur.draw()
+        
+        if self.tiroir_devant:
+            self.tiroir_devant.draw()
 
-        # 1. On active la caméra qui suit le joueur
-        self.camera_jeu.use()
-        self.liste_murs.draw()
-        self.liste_joueur.draw()
+        self.oeil_fixe.use()
+        self.dessiner_hud()
 
-        # 2. On active la caméra fixe pour dessiner l'interface (HUD)
-        self.camera_hud.use()
-        self.dessiner_interface()
-
-    def dessiner_interface(self):
-        """ La partie de Laure : l'affichage des textes """
-        # On affiche un texte simple pour le moment
-        arcade.draw_text("EAU : 100%", 20, 680, arcade.color.WHITE, 16)
+    def dessiner_hud(self):
+        # On dessine les barres de Laure
+        arcade.draw_lrbt_rectangle_filled(20, 220, 680, 700, arcade.color.GRAY)
+        largeur_vie = (self.vie / 100) * 200
+        arcade.draw_lrbt_rectangle_filled(20, 20 + largeur_vie, 680, 700, arcade.color.RED)
+        
+        arcade.draw_lrbt_rectangle_filled(20, 220, 650, 670, arcade.color.GRAY)
+        largeur_eau = (self.eau / 100) * 200
+        arcade.draw_lrbt_rectangle_filled(20, 20 + largeur_eau, 650, 670, arcade.color.BLUE)
 
     def on_update(self, delta_time):
-        """ Cette partie gère la logique (mouvements, calculs) """
+        if self.moteur_physique:
+            self.moteur_physique.update()
         
-        # On fait bouger le moteur physique
-        self.moteur_physique.update()
-
-        # On dit à la caméra de se placer sur la fleur
-        self.camera_jeu.position = (self.fleur.center_x, self.fleur.center_y)
+        self.oeil_qui_suit.position = (self.fleur_perso.center_x, self.fleur_perso.center_y)
+        
+        if self.vitesse_dash > 0:
+            self.fleur_perso.center_x += self.vitesse_dash
+            self.vitesse_dash -= 1 
+        
+        if self.eau > 0:
+            self.eau -= 0.05
 
     def on_key_press(self, touche, modificateurs):
-        """ Quand on appuie sur une touche """
         if touche == arcade.key.UP or touche == arcade.key.SPACE:
-            # Si on peut sauter (qu'on touche le sol), on monte
-            if self.moteur_physique.can_jump():
-                self.fleur.change_y = 12
+            if self.moteur_physique and self.moteur_physique.can_jump():
+                self.fleur_perso.change_y = 12
         elif touche == arcade.key.LEFT:
-            self.fleur.change_x = -5 # On va à gauche
+            self.fleur_perso.change_x = -5
         elif touche == arcade.key.RIGHT:
-            self.fleur.change_x = 5  # On va à droite
+            self.fleur_perso.change_x = 5
+        elif touche == arcade.key.LSHIFT:
+            if self.eau >= 20:
+                self.vitesse_dash = 20
+                self.eau -= 20
 
     def on_key_release(self, touche, modificateurs):
-        """ Quand on relâche une touche """
         if touche == arcade.key.LEFT or touche == arcade.key.RIGHT:
-            self.fleur.change_x = 0 # On s'arrête de marcher
+            self.fleur_perso.change_x = 0
 
 def main():
-    # Lancement du programme
-    fenetre = MonJeu()
-    fenetre.setup()
+    fenetre = arcade.Window(FENETRE_LARGEUR, FENETRE_HAUTEUR, NOM_DU_JEU)
+    menu = EcranMenu()
+    fenetre.show_view(menu)
     arcade.run()
 
-# Lancer le jeu
 if __name__ == "__main__":
     main()
