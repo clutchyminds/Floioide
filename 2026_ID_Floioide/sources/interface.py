@@ -1,171 +1,173 @@
 # =================================================================
 # PROJET : FLOÏOÏDE
-# ÉQUIPE : Thomas (Moteur), Victor (Map), Laure (Interface), Corentin (Ennemis)
+# L'équipe : Thomas, Victor, Laure et Corentin
 # =================================================================
 
 import arcade
 import os
 
-# --- LES RÉGLAGES (Les Constantes) ---
-# On utilise des majuscules pour les variables qui ne changent jamais.
-# Cela permet de modifier la taille de la fenêtre partout d'un seul coup.
-LARGEUR = 1280
-HAUTEUR = 720
-TITRE_JEU = "FLOÏOÏDE - Projet NSI 2026"
+# --- LES RÉGLAGES (Pour ne pas s'embêter plus tard) ---
+FENETRE_LARGEUR = 1280
+FENETRE_HAUTEUR = 720
+NOM_DU_JEU = "FLOÏOÏDE"
 
 # =================================================================
-# 1. L'ÉCRAN DE MENU (Laure)
+# 1. L'ÉCRAN D'ACCUEIL (La partie de Laure)
 # =================================================================
-class MenuDepart(arcade.View):
+class EcranMenu(arcade.View):
     """ 
-    Objet de type 'View' (Vue). 
-    C'est une classe qui représente un écran spécifique du jeu.
-    Ici, c'est l'écran d'accueil avant que le jeu ne commence.
+    C'est comme la première diapo d'un exposé. 
+    Elle sert juste à afficher le titre et attendre qu'on appuie sur Start.
     """
     
     def on_show_view(self):
-        """ 
-        'def' signifie 'définition'. C'est une fonction (ici une méthode).
-        'on_show_view' s'exécute UNE SEULE FOIS au moment où l'écran s'affiche.
-        On l'utilise pour régler la couleur de fond par exemple.
-        """
+        # On choisit une couleur de fond (ici un gris-bleu foncé)
         arcade.set_background_color(arcade.color.DARK_SLATE_GRAY)
 
     def on_draw(self):
-        """ 
-        'on_draw' s'exécute en boucle (60 fois par seconde).
-        C'est ici qu'on met tout ce qui doit être dessiné à l'écran.
-        """
-        self.clear() # On efface l'image d'avant pour ne pas avoir de traces.
+        # Cette fonction dessine ce qu'on voit à l'écran
+        self.clear() # On nettoie l'écran
         
-        # Le titre du jeu (Le nom du jeu)
-        # anchor_x="center" permet de centrer le texte sur le point donné.
-        arcade.draw_text(TITRE_JEU, LARGEUR/2, HAUTEUR*0.7, arcade.color.GREEN, 60, anchor_x="center")
+        # On écrit le titre au milieu
+        arcade.draw_text(NOM_DU_JEU, FENETRE_LARGEUR/2, 500, arcade.color.GREEN, 80, anchor_x="center")
         
-        # Les instructions pour le joueur
-        arcade.draw_text("Appuyez sur ENTRÉE pour Lancer", LARGEUR/2, HAUTEUR*0.5, arcade.color.WHITE, 20, anchor_x="center")
-        arcade.draw_text("Appuyez sur H pour l'Aide", LARGEUR/2, HAUTEUR*0.4, arcade.color.WHITE, 20, anchor_x="center")
+        # On écrit les instructions pour les joueurs
+        arcade.draw_text("Appuie sur ENTRÉE pour jouer", FENETRE_LARGEUR/2, 350, arcade.color.WHITE, 20, anchor_x="center")
+        arcade.draw_text("Appuie sur H pour l'Aide", FENETRE_LARGEUR/2, 280, arcade.color.WHITE, 20, anchor_x="center")
 
-    def on_key_press(self, key, modifiers):
-        """ 
-        Cette méthode surveille le clavier. 
-        'key' contient le code de la touche sur laquelle on a appuyé.
-        """
-        if key == arcade.key.ENTER:
-            # On crée un nouvel OBJET de la classe MonJeu
-            vue_jeu = MonJeu()
-            # On lance sa configuration
-            vue_jeu.setup()
-            # On dit à la fenêtre de quitter le menu pour afficher le jeu
-            self.window.show_view(vue_jeu)
+    def on_key_press(self, touche, modificateurs):
+        # Si le joueur appuie sur la touche ENTRÉE
+        if touche == arcade.key.ENTER:
+            # On prépare le "vrai" jeu
+            le_jeu = MonJeu()
+            le_jeu.setup() # On lance l'installation des objets
+            # On change de "diapo" pour afficher le jeu
+            self.window.show_view(le_jeu)
 
 # =================================================================
-# 2. L'ÉCRAN DE JEU (Le Moteur principal)
+# 2. LE COEUR DU JEU (Thomas, Laure, Victor, Corentin)
 # =================================================================
 class MonJeu(arcade.View):
     """
-    C'est le coeur du projet. Cette classe gère la physique de Thomas, 
-    la map de Victor et les barres de Laure.
+    C'est ici que tout se passe : les mouvements, les barres de vie, etc.
     """
     
     def __init__(self):
-        """ 
-        '__init__' est le CONSTRUCTEUR de la classe.
-        Il prépare les variables (les attributs) dont le jeu aura besoin.
-        On les met à 'None' (vide) au début.
-        """
+        # C'est la liste de préparation des ingrédients du jeu
         super().__init__()
-        self.liste_joueur = None # Tiroir pour ranger la fleur
-        self.fleur = None        # L'objet qui représente le joueur
         
-        # Les Caméras (Essentiel en NSI pour la gestion de l'affichage)
-        self.camera_jeu = arcade.camera.Camera2D() # Bouge avec Thomas
-        self.camera_hud = arcade.camera.Camera2D() # Reste fixe pour Laure
+        # On crée des "tiroirs" vides pour ranger nos trucs plus tard
+        self.tiroir_fleur = None  # Pour ranger notre personnage
+        self.fleur_perso = None   # Pour créer notre fleur
         
-        # --- STATS DE LA FLEUR (Attributs de Laure) ---
+        # On crée deux caméras (comme des yeux)
+        self.oeil_qui_suit = arcade.camera.Camera2D() # Suivra la fleur
+        self.oeil_fixe = arcade.camera.Camera2D()     # Ne bougera jamais (pour Laure)
+        
+        # --- LES STATS (Pour Laure) ---
         self.vie = 100
-        self.eau = 100 # Sert aussi de barre d'énergie (stamina)
+        self.eau = 100 
+        
+        # --- LE DASH (Pour Thomas) ---
+        self.vitesse_dash = 0  # Au début, on ne dashe pas
 
     def setup(self):
-        """
-        Prépare tous les éléments du niveau. 
-        C'est ici que Victor chargera sa grande map TMX.
-        """
-        # SpriteList est une liste optimisée par Arcade pour dessiner vite.
-        self.liste_joueur = arcade.SpriteList()
+        """ Ici on installe les meubles dans la chambre (on crée les objets) """
         
-        # On crée le Sprite de la fleur (le personnage)
-        # On utilise une image temporaire fournie par Arcade.
-        self.fleur = arcade.Sprite(":resources:images/animated_characters/female_adventurer/femaleAdventurer_idle.png", 0.5)
-        self.fleur.center_x = 100
-        self.fleur.center_y = 150
-        self.liste_joueur.append(self.fleur) # On range la fleur dans son tiroir
+        # On active nos tiroirs
+        self.tiroir_fleur = arcade.SpriteList()
+        
+        # On crée la fleur (On prend une image de test pour l'instant)
+        self.fleur_perso = arcade.Sprite(":resources:images/animated_characters/female_adventurer/femaleAdventurer_idle.png", 0.5)
+        self.fleur_perso.center_x = 200 # Position de départ à gauche
+        self.fleur_perso.center_y = 300 # Position de départ en hauteur
+        
+        # On range la fleur dans son tiroir
+        self.tiroir_fleur.append(self.fleur_perso)
 
     def on_draw(self):
-        """ Dessine le monde et l'interface """
-        self.clear()
+        """ On dessine tout ce qui se passe dans le jeu """
+        self.clear() # On efface tout pour redessiner proprement
         
-        # 1. On utilise la caméra de jeu (Thomas)
-        # Tout ce qui est dessiné après ici suivra le joueur.
-        self.camera_jeu.use()
-        self.liste_joueur.draw()
+        # 1. On utilise l'oeil qui suit le joueur (Thomas)
+        self.oeil_qui_suit.use()
+        self.tiroir_fleur.draw() # On dessine tout ce qu'il y a dans le tiroir fleur
 
-        # 2. On utilise la caméra HUD (Laure)
-        # Tout ce qui est dessiné ici sera "collé" à l'écran.
-        self.camera_hud.use()
-        self.dessiner_hud()
+        # 2. On utilise l'oeil fixe pour l'interface (Laure)
+        self.oeil_fixe.use()
+        self.dessiner_barres_de_vie()
 
-    def dessiner_hud(self):
-        """ 
-        Méthode créée pour Laure pour organiser son code.
-        Elle dessine les jauges de survie.
-        """
-        # --- LA BARRE DE VIE (ROUGE) ---
-        # Un rectangle gris pour le fond de la barre
+    def dessiner_barres_de_vie(self):
+        """ La partie de Laure : dessiner les jauges en haut à gauche """
+        
+        # BARRE DE VIE (En rouge)
+        # Un rectangle gris dessous (le fond vide)
         arcade.draw_lrtb_rectangle_filled(20, 220, 700, 680, arcade.color.GRAY)
-        # Calcul de la largeur : on fait un produit en croix.
-        # (vie / 100) donne un nombre entre 0 et 1. On multiplie par 200 (largeur max).
-        largeur_vie = (self.vie / 100) * 200
-        arcade.draw_lrtb_rectangle_filled(20, 20 + largeur_vie, 700, 680, arcade.color.RED)
-        arcade.draw_text("VIE", 230, 685, arcade.color.WHITE, 12)
-
-        # --- LA BARRE D'EAU / ÉNERGIE (BLEUE) ---
+        # La barre rouge qui change de taille selon la vie
+        taille_rouge = (self.vie / 100) * 200
+        arcade.draw_lrtb_rectangle_filled(20, 20 + taille_rouge, 700, 680, arcade.color.RED)
+        
+        # BARRE D'EAU (En bleu)
+        # Un rectangle gris dessous
         arcade.draw_lrtb_rectangle_filled(20, 220, 670, 650, arcade.color.GRAY)
-        largeur_eau = (self.eau / 100) * 200
-        arcade.draw_lrtb_rectangle_filled(20, 20 + largeur_eau, 670, 650, arcade.color.BLUE)
-        arcade.draw_text("EAU", 230, 655, arcade.color.WHITE, 12)
+        # La barre bleue qui change de taille selon l'eau
+        taille_bleue = (self.eau / 100) * 200
+        arcade.draw_lrtb_rectangle_filled(20, 20 + taille_bleue, 670, 650, arcade.color.BLUE)
 
     def on_update(self, delta_time):
-        """ 
-        'on_update' gère la logique (la réflexion du jeu).
-        delta_time est le temps écoulé depuis la dernière image (environ 1/60e de sec).
-        """
-        # La caméra de jeu suit toujours les coordonnées X et Y de la fleur.
-        self.camera_jeu.position = (self.fleur.center_x, self.fleur.center_y)
+        """ C'est le cerveau du jeu. Il calcule tout 60 fois par seconde. """
         
-        # EXEMPLE DE LOGIQUE : L'eau baisse avec le temps
+        # On dit à l'oeil de toujours regarder la fleur
+        self.oeil_qui_suit.position = (self.fleur_perso.center_x, self.fleur_perso.center_y)
+        
+        # --- LOGIQUE DU DASH (Thomas) ---
+        # Si la vitesse de dash est active, on fait avancer la fleur super vite
+        if self.vitesse_dash > 0:
+            self.fleur_perso.center_x += self.vitesse_dash
+            self.vitesse_dash -= 1 # On freine petit à petit pour que ça s'arrête
+        
+        # --- LOGIQUE DE L'EAU (Laure) ---
         if self.eau > 0:
-            self.eau -= 0.05 # On retire un tout petit peu d'eau à chaque mise à jour
+            self.eau -= 0.05 # L'eau s'évapore tout doucement
+
+    def on_key_press(self, touche, modificateurs):
+        """ Quand on appuie sur une touche du clavier """
+        
+        # Marcher à gauche ou à droite
+        if touche == arcade.key.LEFT:
+            self.fleur_perso.change_x = -5
+        elif touche == arcade.key.RIGHT:
+            self.fleur_perso.change_x = 5
+            
+        # LE DASH (Thomas)
+        # Si on appuie sur SHIFT (la flèche en haut au dessus de CTRL)
+        if touche == arcade.key.LSHIFT:
+            # On vérifie si on a assez d'eau (énergie) pour dasher
+            if self.eau >= 20:
+                self.vitesse_dash = 20 # On donne un gros coup de boost
+                self.eau -= 20         # On consomme de l'eau (énergie)
+
+    def on_key_release(self, touche, modificateurs):
+        """ Quand on lâche la touche, on arrête de marcher """
+        if touche == arcade.key.LEFT or touche == arcade.key.RIGHT:
+            self.fleur_perso.change_x = 0
 
 # =================================================================
-# 3. LE LANCEMENT DU PROGRAMME
+# 3. LE BOUTON "ALLUMER"
 # =================================================================
 def main():
-    """ 
-    C'est la fonction principale. C'est le point d'entrée du code.
-    """
-    # On crée l'objet 'Fenêtre'
-    window = arcade.Window(LARGEUR, HAUTEUR, TITRE_JEU)
+    # On crée la fenêtre de Windows
+    fenetre_principale = arcade.Window(FENETRE_LARGEUR, FENETRE_HAUTEUR, NOM_DU_JEU)
     
-    # On crée l'objet 'Menu'
-    menu = MenuDepart()
+    # On prépare le menu
+    menu = EcranMenu()
     
-    # On dit à la fenêtre d'afficher le menu en premier
-    window.show_view(menu)
+    # On dit à la fenêtre : "Affiche le menu d'abord !"
+    fenetre_principale.show_view(menu)
     
-    # On lance la boucle infinie du jeu
+    # On lance la machine
     arcade.run()
 
-# Cette ligne vérifie si on a cliqué sur 'Play' dans l'éditeur de code.
+# On lance le code
 if __name__ == "__main__":
     main()
