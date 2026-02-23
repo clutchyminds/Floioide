@@ -13,6 +13,7 @@ Floïoïde est un jeu vidéo 2D de type Metroidvania développé en Python avec 
   * Corentin Gelineau	 Autorisations parentales : en cours
 
 ### Encadrement
+
 * Olivier Booklage
 * Académie : Bordeaux
 * Établissement : Lycée général et technologique privé Sainte Marie Bastide
@@ -46,4 +47,5 @@ python main.py
 ```
 
 ### Statut
+
 Brouillon soumis le 2026-02-23 13:28:59
