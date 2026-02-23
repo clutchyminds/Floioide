@@ -6,18 +6,20 @@ Floïoïde est un jeu vidéo 2D de type Metroidvania développé en Python avec 
 
 ### Équipe
 
-* Composition de l'équipe : 0 filles ; 2 garçons ; 0 non renseigné
-* Totaux en NSI pour ce niveau : 4 filles ; 9 garçons
+* Composition de l'équipe : 1 fille ; 3 garçons ; 0 non renseigné
 
-  * Thomas Lewis	 Autorisations parentales : en cours
-  * Corentin Gelineau	 Autorisations parentales : en cours
+  * Laure - Autorisations parentales : en cours
+  * Thomas - Autorisations parentales : en cours
+  * Corentin - Autorisations parentales : en cours
+  * Victor - Autorisations parentales : en cours
 
 ### Encadrement
 
-* Olivier Booklage
+* @OB
 * Académie : Bordeaux
 * Établissement : Lycée général et technologique privé Sainte Marie Bastide
 * Niveau : NSI Première
+* Totaux en NSI pour ce niveau : 4 filles ; 9 garçons
 
 ### Fonctionnalités
 
