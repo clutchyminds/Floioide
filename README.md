@@ -1,8 +1,22 @@
-# FLOÏOÏDE
+# LES TROPHÉES NSI 2026 : FLOÏOÏDE (ID:1634)
 
 ## Description
 
 Floïoïde est un jeu vidéo 2D de type Metroidvania développé en Python avec la bibliothèque [Arcade](https://api.arcade.academy/). Le joueur incarne une fleur qui explore un monde inspiré de la nature, affronte des ennemis et un boss, tout en gérant ses ressources en eau et ses points de vie.
+
+### Équipe
+
+* Composition de l'équipe : 0 filles ; 2 garçons ; 0 non renseigné
+* Totaux en NSI pour ce niveau : 4 filles ; 9 garçons
+
+  * Thomas Lewis	 Autorisations parentales : en cours
+  * Corentin Gelineau	 Autorisations parentales : en cours
+
+### Encadrement
+* Olivier Booklage
+* Académie : Bordeaux
+* Établissement : Lycée général et technologique privé Sainte Marie Bastide
+* Niveau : NSI Première
 
 ### Fonctionnalités
 
@@ -24,34 +38,12 @@ Floïoïde est un jeu vidéo 2D de type Metroidvania développé en Python avec 
 
 ## Installation
 
+- Python 3.13 requis
+
 ```bash
 pip install -r requirements.txt
 python main.py
 ```
-
-## Dépendances
-
-- Python 3
-- Arcade
-
-## LES TROPHÉES NSI
-
-### Projet
-* Floioïde ID:1634
-
-### Encadrement
-* Olivier Booklage
-* Académie : Bordeaux
-* Établissement : Lycée général et technologique privé Sainte Marie Bastide
-* Niveau : Première
-
-### Équipe
-
-* Composition de l'équipe : 0 filles ; 2 garçons ; 0 non renseigné
-* Totaux en NSI pour ce niveau : 4 filles ; 9 garçons
-
-  * Thomas Lewis	 Autorisations parentales : en cours
-  * Corentin Gelineau	 Autorisations parentales : en cours
 
 ### Statut
 Brouillon soumis le 2026-02-23 13:28:59
