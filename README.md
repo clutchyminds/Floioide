@@ -7,11 +7,11 @@ Floïoïde est un jeu vidéo 2D de type Metroidvania développé en Python avec 
 ### Fonctionnalités
 
 - Déplacement latéral et saut avec moteur physique (gravité, plateformes)
-- Mécanisme de **dash** consommant de l'eau (énergie)
+- Mécanisme de **ruée** (dash) consommant de l'eau (énergie)
 - Jauge de vie et jauge d'eau qui s'évapore progressivement
-- Ennemis animés et boss avec sprites personnalisés
-- Niveaux créés avec des tilemaps (format TMJ / Tiled)
-- Écran de menu et HUD (interface en jeu)
+- Ennemis animés et boss avec images-objets personnalisées
+- Niveaux créés avec des cartes de tuiles (format TMJ / Tiled)
+- Écran de menu et affichage tête haute (HUD)
 
 ### Contrôles
 
@@ -19,7 +19,7 @@ Floïoïde est un jeu vidéo 2D de type Metroidvania développé en Python avec 
 |--------|--------|
 | Flèches gauche/droite | Se déplacer |
 | Flèche haut / Espace | Sauter |
-| Maj gauche | Dash (coûte 20 d'eau) |
+| Maj gauche | Ruée (coûte 20 d'eau) |
 | Entrée | Lancer la partie (depuis le menu) |
 
 ## Installation
