@@ -18,7 +18,7 @@ class MonJeu(arcade.View):
         self.physique = None
         self.cam = arcade.camera.Camera2D()
         # son de saut
-        self.son_saut = arcade.load_sound(os.path.join(DOSSIER_DATA, "sons", "jump.wav"))
+        self.son_saut = arcade.load_sound(os.path.join(DOSSIER_DATA, "sons", "saut.wav"))
 
     def setup(self):
         # 1. joueur
