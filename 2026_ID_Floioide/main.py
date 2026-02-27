@@ -19,8 +19,8 @@ class MonJeu(arcade.View):
         self.cam = arcade.camera.Camera2D()
         # on charge les sons au début pour pas les recharger à chaque fois
         self.son_saut = arcade.load_sound(os.path.join(DOSSIER_DATA, "sons", "saut.wav"))
-        self.son_deplacement = arcade.load_sound(os.path.join(DOSSIER_DATA, "sons", "deplacement.wav"))
-        # cette variable garde en mémoire le son qui joue, pour pouvoir l'arrêter
+        self.son_deplacement = arcade.load_sound(os.path.join(DOSSIER_DATA, "sons", "deplacement.ogg"))
+        # variable qui garde en mémoire le son qui joue, pour pouvoir l'arrêter
         self.son_deplacement_en_cours = None
 
     def setup(self):
@@ -61,19 +61,19 @@ class MonJeu(arcade.View):
         elif key == arcade.key.RIGHT:
             self.fleur.change_x = VITESSE_MARCHE
             self.lancer_son_deplacement()
-        # échap pour quitter le jeu
+        # touche échap pour quitter le jeu
         elif key == arcade.key.ESCAPE:
             arcade.exit()
-        # on peut sauter avec ESPACE ou FLECHE HAUT
+        # on peut sauter avec la touche ESPACE ou FLECHE HAUT
         elif key == arcade.key.SPACE or key == arcade.key.UP:
             if self.physique.can_jump():
                 self.fleur.change_y = VITESSE_SAUT
                 arcade.play_sound(self.son_saut)
 
     def lancer_son_deplacement(self):
-        # on coupe l'ancien son avant d'en jouer un nouveau (sinon ils se superposent)
+        # on coupe l'ancien son avant d'en jouer un nouveau (sinon ils se jouent en même)
         self.arreter_son_deplacement()
-        # loop=True : le son se répète en boucle tant qu'on marche
+        # loop=True : le son se répète en boucle tant que la fleur marche
         self.son_deplacement_en_cours = arcade.play_sound(self.son_deplacement, loop=True)
 
     def arreter_son_deplacement(self):
@@ -102,14 +102,14 @@ class MonJeu(arcade.View):
             e.update_animation(delta_time)
         self.cam.position = (self.fleur.center_x, self.fleur.center_y)
 
-        # si la fleur ne bouge plus on coupe le son de marche
+        # si la fleur ne bouge plu,s on coupe le son de sa marche
         if self.fleur.change_x == 0:
             self.arreter_son_deplacement()
 
 class Menu(arcade.View):
     def __init__(self, jeu):
         super().__init__()
-        # on garde le jeu en mémoire pour pas le recharger à chaque fois
+        # on garde le jeu dans une variable pour pas le recharger à chaque fois
         self.jeu = jeu
 
     def on_draw(self):
