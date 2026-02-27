@@ -96,6 +96,11 @@ class Menu(arcade.View):
 def main():
     win = arcade.Window(LARGEUR, HAUTEUR, TITRE)
 
+    # on affiche un message de chargement
+    win.clear()
+    arcade.draw_text("Chargement...", LARGEUR/2, HAUTEUR/2, arcade.color.WHITE, 20, anchor_x="center")
+    win.flip()
+
     # on charge tout au debut comme ca c'est deja pret
     jeu = MonJeu()
     jeu.setup()
