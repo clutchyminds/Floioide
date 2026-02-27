@@ -1,10 +1,10 @@
 @echo off
-echo ===========================
-echo   Lanceur Floioide
-echo ===========================
-echo.
+echo ****************************
+echo   Jeu Floioide Windows
+echo Avec environnement virtuel
+echo ****************************
 
-:: Verification de Python
+:: Vérification si Python est bien installé
 python --version >nul 2>&1
 if errorlevel 1 (
     echo [ERREUR] Python n'est pas installe ou pas dans le PATH.
@@ -12,7 +12,8 @@ if errorlevel 1 (
     exit /b 1
 )
 
-:: Creation ou verification du .venv
+:: Check si l'environnement virtual est présent.
+:: Le crée s'il n'est pas encore
 if not exist ".venv" (
     echo [INFO] Creation de l'environnement virtuel .venv ...
     python -m venv .venv
@@ -26,7 +27,8 @@ if not exist ".venv" (
     echo [OK] Environnement virtuel .venv deja present.
 )
 
-:: Activation du .venv et installation des dependances
+:: Utilisation de l'enviromment virtuel
+:: Installe les dépendances si ce n'est pas fait.
 echo [INFO] Installation des dependances ...
 call .venv\Scripts\activate.bat
 pip install -r requirements.txt --quiet
@@ -37,10 +39,11 @@ if errorlevel 1 (
 )
 echo [OK] Dependances installees.
 
-:: Lancement du jeu
+:: On  lance le jeu
 echo.
 echo [INFO] Lancement de Floioide ...
 echo.
 python main.py
 
+:: On attend une touche du clavier pour quitter le programme.
 pause
