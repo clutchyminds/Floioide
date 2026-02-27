@@ -3,7 +3,7 @@ import os
 from sources.constantes import *
 from sources.entities import Ennemi, LeBoss
 
-# reglages de deplacement
+# réglages de déplacement
 VITESSE_MARCHE = 5
 VITESSE_SAUT = 12
 
@@ -17,10 +17,10 @@ class MonJeu(arcade.View):
         self.fleur = None
         self.physique = None
         self.cam = arcade.camera.Camera2D()
-        # on charge les sons au debut pour pas les recharger a chaque fois
+        # on charge les sons au début pour pas les recharger à chaque fois
         self.son_saut = arcade.load_sound(os.path.join(DOSSIER_DATA, "sons", "saut.wav"))
         self.son_deplacement = arcade.load_sound(os.path.join(DOSSIER_DATA, "sons", "deplacement.wav"))
-        # cette variable garde en memoire le son qui joue, pour pouvoir l'arreter
+        # cette variable garde en mémoire le son qui joue, pour pouvoir l'arrêter
         self.son_deplacement_en_cours = None
 
     def setup(self):
@@ -42,7 +42,7 @@ class MonJeu(arcade.View):
             ma_map = arcade.tilemap.load_tilemap(m_path, scaling=2)
             self.tiroir_murs = ma_map.sprite_lists.get("hit-box", arcade.SpriteList())
             self.tiroir_decor = ma_map.sprite_lists.get("back-ground", arcade.SpriteList())
-            print("map chargee")
+            print("map chargée")
         except Exception as e:
             print(f"erreur map : {e}")
 
@@ -54,14 +54,14 @@ class MonJeu(arcade.View):
         self.tiroir_ennemis.append(LeBoss(self.fleur.center_x + 500, self.fleur.center_y + 100))
 
     def on_key_press(self, key, modifiers):
-        # controles thomas
+        # contrôles thomas
         if key == arcade.key.LEFT:
             self.fleur.change_x = -VITESSE_MARCHE
             self.lancer_son_deplacement()
         elif key == arcade.key.RIGHT:
             self.fleur.change_x = VITESSE_MARCHE
             self.lancer_son_deplacement()
-        # echap pour quitter le jeu
+        # échap pour quitter le jeu
         elif key == arcade.key.ESCAPE:
             arcade.exit()
         # on peut sauter avec ESPACE ou FLECHE HAUT
@@ -73,11 +73,11 @@ class MonJeu(arcade.View):
     def lancer_son_deplacement(self):
         # on coupe l'ancien son avant d'en jouer un nouveau (sinon ils se superposent)
         self.arreter_son_deplacement()
-        # loop=True : le son se repete en boucle tant qu'on marche
+        # loop=True : le son se répète en boucle tant qu'on marche
         self.son_deplacement_en_cours = arcade.play_sound(self.son_deplacement, loop=True)
 
     def arreter_son_deplacement(self):
-        # on verifie qu'un son est bien en train de jouer avant de l'arreter
+        # on vérifie qu'un son est bien en train de jouer avant de l'arrêter
         if self.son_deplacement_en_cours:
             arcade.stop_sound(self.son_deplacement_en_cours)
             self.son_deplacement_en_cours = None
