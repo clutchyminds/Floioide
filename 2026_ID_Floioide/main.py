@@ -56,11 +56,10 @@ class MonJeu(arcade.View):
         # controles thomas
         if key == arcade.key.LEFT:
             self.fleur.change_x = -VITESSE_MARCHE
-            # on joue le son de deplacement en boucle
-            self.son_deplacement_en_cours = arcade.play_sound(self.son_deplacement, loop=True)
+            self.lancer_son_deplacement()
         elif key == arcade.key.RIGHT:
             self.fleur.change_x = VITESSE_MARCHE
-            self.son_deplacement_en_cours = arcade.play_sound(self.son_deplacement, loop=True)
+            self.lancer_son_deplacement()
         # echap pour quitter le jeu
         elif key == arcade.key.ESCAPE:
             arcade.exit()
@@ -70,13 +69,20 @@ class MonJeu(arcade.View):
                 self.fleur.change_y = VITESSE_SAUT
                 arcade.play_sound(self.son_saut)
 
+    def lancer_son_deplacement(self):
+        # on arrete l'ancien son avant d'en lancer un nouveau
+        self.arreter_son_deplacement()
+        self.son_deplacement_en_cours = arcade.play_sound(self.son_deplacement, loop=True)
+
+    def arreter_son_deplacement(self):
+        if self.son_deplacement_en_cours:
+            arcade.stop_sound(self.son_deplacement_en_cours)
+            self.son_deplacement_en_cours = None
+
     def on_key_release(self, key, modifiers):
         if key == arcade.key.LEFT or key == arcade.key.RIGHT:
             self.fleur.change_x = 0
-            # on arrete le son quand on lache la touche
-            if self.son_deplacement_en_cours:
-                arcade.stop_sound(self.son_deplacement_en_cours)
-                self.son_deplacement_en_cours = None
+            self.arreter_son_deplacement()
 
     def on_draw(self):
         self.clear()
@@ -92,6 +98,10 @@ class MonJeu(arcade.View):
         for e in self.tiroir_ennemis:
             e.update_animation(delta_time)
         self.cam.position = (self.fleur.center_x, self.fleur.center_y)
+
+        # si la fleur ne bouge plus, on coupe le son
+        if self.fleur.change_x == 0:
+            self.arreter_son_deplacement()
 
 class Menu(arcade.View):
     def __init__(self, jeu):
