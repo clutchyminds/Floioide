@@ -17,8 +17,10 @@ class MonJeu(arcade.View):
         self.fleur = None
         self.physique = None
         self.cam = arcade.camera.Camera2D()
-        # son de saut
+        # sons
         self.son_saut = arcade.load_sound(os.path.join(DOSSIER_DATA, "sons", "saut.wav"))
+        self.son_deplacement = arcade.load_sound(os.path.join(DOSSIER_DATA, "sons", "deplacement.wav"))
+        self.son_deplacement_en_cours = None
 
     def setup(self):
         # 1. joueur
@@ -54,8 +56,11 @@ class MonJeu(arcade.View):
         # controles thomas
         if key == arcade.key.LEFT:
             self.fleur.change_x = -VITESSE_MARCHE
+            # on joue le son de deplacement en boucle
+            self.son_deplacement_en_cours = arcade.play_sound(self.son_deplacement, looping=True)
         elif key == arcade.key.RIGHT:
             self.fleur.change_x = VITESSE_MARCHE
+            self.son_deplacement_en_cours = arcade.play_sound(self.son_deplacement, looping=True)
         # on peut sauter avec ESPACE ou FLECHE HAUT
         elif key == arcade.key.SPACE or key == arcade.key.UP:
             if self.physique.can_jump():
@@ -65,6 +70,10 @@ class MonJeu(arcade.View):
     def on_key_release(self, key, modifiers):
         if key == arcade.key.LEFT or key == arcade.key.RIGHT:
             self.fleur.change_x = 0
+            # on arrete le son quand on lache la touche
+            if self.son_deplacement_en_cours:
+                arcade.stop_sound(self.son_deplacement_en_cours)
+                self.son_deplacement_en_cours = None
 
     def on_draw(self):
         self.clear()
