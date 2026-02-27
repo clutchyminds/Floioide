@@ -57,10 +57,10 @@ class MonJeu(arcade.View):
         if key == arcade.key.LEFT:
             self.fleur.change_x = -VITESSE_MARCHE
             # on joue le son de deplacement en boucle
-            self.son_deplacement_en_cours = arcade.play_sound(self.son_deplacement, looping=True)
+            self.son_deplacement_en_cours = arcade.play_sound(self.son_deplacement, loop=True)
         elif key == arcade.key.RIGHT:
             self.fleur.change_x = VITESSE_MARCHE
-            self.son_deplacement_en_cours = arcade.play_sound(self.son_deplacement, looping=True)
+            self.son_deplacement_en_cours = arcade.play_sound(self.son_deplacement, loop=True)
         # on peut sauter avec ESPACE ou FLECHE HAUT
         elif key == arcade.key.SPACE or key == arcade.key.UP:
             if self.physique.can_jump():
@@ -113,7 +113,7 @@ def main():
     arcade.draw_text("Chargement...", LARGEUR/2, HAUTEUR/2, arcade.color.WHITE, 20, anchor_x="center")
     win.flip()
 
-    # on charge dès le début
+    # on charge le jeu
     jeu = MonJeu()
     jeu.setup()
 
