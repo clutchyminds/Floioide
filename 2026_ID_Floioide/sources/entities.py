@@ -27,8 +27,8 @@ class Ennemi(EntiteAnimee):
             # dossier data/mobtest d apres tes photos
             d = os.path.join(DOSSIER_DATA, "mobtest")
             self.textures = [
-                arcade.load_texture(os.path.join(d, "avancer (1).png")),
-                arcade.load_texture(os.path.join(d, "avancer (2).png"))
+                arcade.load_texture(os.path.join(d, "mob-1.png")),
+                arcade.load_texture(os.path.join(d, "mob-2.png"))
             ]
             self.texture = self.textures[0]
         except Exception as e:
