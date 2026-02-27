@@ -1,17 +1,50 @@
-# Projet : Floioide
-# Auteurs : Laure Ducourneau, Victor Dauphin, Corentin Gelineau, Thomas Lewis
-
 import arcade
+import os
+from sources.constantes import DOSSIER_DATA
 
-class Ennemi(arcade.Sprite):
-    def update(self):
-        # CORENTIN : C'est ici que tu gères le mouvement de l'ennemi
-        self.center_x += self.change_x
-        # Si l'ennemi touche une limite, il fait demi-tour
-        pass
+class EntiteAnimee(arcade.Sprite):
+    def __init__(self, x, y, taille=1.0):
+        super().__init__()
+        self.textures = []
+        self.center_x = x
+        self.center_y = y
+        self.scale = taille
+        self.frame_actuelle = 0
+        self.temps = 0
 
-class Floioide(arcade.Sprite):
-    def __init__(self):
-        super().__init__("data/images/fleur.png", 0.5)
-        self.eau = 100
-        self.petales = 5
+    def update_animation(self, delta_time=1/60):
+        if self.textures:
+            self.temps += delta_time
+            if self.temps > 0.15:
+                self.temps = 0
+                self.frame_actuelle = (self.frame_actuelle + 1) % len(self.textures)
+                self.texture = self.textures[self.frame_actuelle]
+
+class Ennemi(EntiteAnimee):
+    def __init__(self, x, y):
+        super().__init__(x, y)
+        try:
+            d = os.path.join(DOSSIER_DATA, "mobtest")
+            # Noms selon ta capture : mob-1.png et mob-2.png
+            self.textures = [
+                arcade.load_texture(os.path.join(d, "mob-1.png")),
+                arcade.load_texture(os.path.join(d, "mob-2.png"))
+            ]
+            self.texture = self.textures[0]
+        except Exception as e:
+            print(f"Erreur mob: {e}")
+            self.texture = arcade.make_soft_square_texture(64, (255, 0, 0))
+
+class LeBoss(EntiteAnimee):
+    def __init__(self, x, y):
+        super().__init__(x, y, taille=2.5)
+        try:
+            d = os.path.join(DOSSIER_DATA, "boss", "test")
+            # On charge les 33 frames d attaque
+            for i in range(33):
+                nom = f"attaque{i:02d}.png"
+                self.textures.append(arcade.load_texture(os.path.join(d, nom)))
+            self.texture = self.textures[0]
+        except Exception as e:
+            print(f"Erreur boss: {e}")
+            self.texture = arcade.make_soft_square_texture(120, (150, 0, 0))

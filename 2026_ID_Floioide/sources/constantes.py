@@ -1,11 +1,17 @@
-# Projet : Floioide
-# Auteurs : Laure Ducourneau, Victor Dauphin, Corentin Gelineau, Thomas Lewis
+import os
 
-import arcade
+# Reglages de la fenetre
+LARGEUR = 1280
+HAUTEUR = 720
+TITRE = "FLOIOIDE"
 
-def dessiner_hud(eau, petales):
-    # LAURE : C'est ici que tu dessines la barre d'eau
-    # Exemple :
-    arcade.draw_text(f"Eau: {int(eau)}%", 20, 20, arcade.color.WHITE, 14)
-    # Dessiner les pétales restants
-    pass
+# Gestion des chemins
+# On remonte de un niveau depuis sources pour arriver a la racine du projet
+CHEMIN_BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DOSSIER_DATA = os.path.join(CHEMIN_BASE, "data")
+DOSSIER_MAPS = os.path.join(DOSSIER_DATA, "maps")
+
+# Couleurs pour le HUD
+COULEUR_VIE = (255, 0, 0)
+COULEUR_EAU = (0, 0, 255)
+COULEUR_FOND_BARRE = (50, 50, 50)
