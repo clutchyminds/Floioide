@@ -61,6 +61,9 @@ class MonJeu(arcade.View):
         elif key == arcade.key.RIGHT:
             self.fleur.change_x = VITESSE_MARCHE
             self.son_deplacement_en_cours = arcade.play_sound(self.son_deplacement, loop=True)
+        # echap pour quitter le jeu
+        elif key == arcade.key.ESCAPE:
+            arcade.exit()
         # on peut sauter avec ESPACE ou FLECHE HAUT
         elif key == arcade.key.SPACE or key == arcade.key.UP:
             if self.physique.can_jump():
