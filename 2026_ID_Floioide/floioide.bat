@@ -9,6 +9,7 @@ if not exist ".venv" (
 
 :: On active le venv et on installe les modules
 call .venv\Scripts\activate.bat
+python.exe -m pip install --upgrade pip
 pip install -r requirements.txt
 
 :: On lance le jeu
