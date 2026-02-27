@@ -79,17 +79,29 @@ class MonJeu(arcade.View):
         self.cam.position = (self.fleur.center_x, self.fleur.center_y)
 
 class Menu(arcade.View):
+    def __init__(self, jeu):
+        super().__init__()
+        # on garde le jeu en memoire pour pas le recharger
+        self.jeu = jeu
+
     def on_draw(self):
         self.clear()
         arcade.draw_text("FLOIOIDE - ENTREE", LARGEUR/2, HAUTEUR/2, arcade.color.WHITE, 20, anchor_x="center")
+
     def on_key_press(self, key, mod):
         if key == arcade.key.ENTER:
-            v = MonJeu(); v.setup()
-            self.window.show_view(v)
+            # on affiche le jeu qui est deja pret
+            self.window.show_view(self.jeu)
 
 def main():
     win = arcade.Window(LARGEUR, HAUTEUR, TITRE)
-    win.show_view(Menu())
+
+    # on charge tout au debut comme ca c'est deja pret
+    jeu = MonJeu()
+    jeu.setup()
+
+    # on affiche le menu en premier
+    win.show_view(Menu(jeu))
     arcade.run()
 
 if __name__ == "__main__":
