@@ -17,6 +17,8 @@ class MonJeu(arcade.View):
         self.fleur = None
         self.physique = None
         self.cam = arcade.camera.Camera2D()
+        # son de saut
+        self.son_saut = arcade.load_sound(os.path.join(DOSSIER_DATA, "sons", "jump.wav"))
 
     def setup(self):
         # 1. joueur
@@ -58,6 +60,7 @@ class MonJeu(arcade.View):
         elif key == arcade.key.SPACE or key == arcade.key.UP:
             if self.physique.can_jump():
                 self.fleur.change_y = VITESSE_SAUT
+                arcade.play_sound(self.son_saut)
 
     def on_key_release(self, key, modifiers):
         if key == arcade.key.LEFT or key == arcade.key.RIGHT:
@@ -81,7 +84,7 @@ class MonJeu(arcade.View):
 class Menu(arcade.View):
     def __init__(self, jeu):
         super().__init__()
-        # on garde le jeu en memoire pour pas le recharger
+        # on garde le jeu en mémoire pour pas le recharger à chaque fois
         self.jeu = jeu
 
     def on_draw(self):
@@ -90,22 +93,22 @@ class Menu(arcade.View):
 
     def on_key_press(self, key, mod):
         if key == arcade.key.ENTER:
-            # on affiche le jeu qui est deja pret
+            # on affiche le jeu
             self.window.show_view(self.jeu)
 
 def main():
     win = arcade.Window(LARGEUR, HAUTEUR, TITRE)
 
-    # on affiche un message de chargement
+    # on affiche un message de chargement pour patienter...
     win.clear()
     arcade.draw_text("Chargement...", LARGEUR/2, HAUTEUR/2, arcade.color.WHITE, 20, anchor_x="center")
     win.flip()
 
-    # on charge tout au debut comme ca c'est deja pret
+    # on charge dès le début
     jeu = MonJeu()
     jeu.setup()
 
-    # on affiche le menu en premier
+    # on affiche le menu
     win.show_view(Menu(jeu))
     arcade.run()
 
