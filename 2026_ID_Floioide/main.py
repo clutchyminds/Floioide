@@ -54,7 +54,8 @@ class MonJeu(arcade.View):
             self.fleur.change_x = -VITESSE_MARCHE
         elif key == arcade.key.RIGHT:
             self.fleur.change_x = VITESSE_MARCHE
-        elif key == arcade.key.SPACE:
+        # on peut sauter avec ESPACE ou FLECHE HAUT
+        elif key == arcade.key.SPACE or key == arcade.key.UP:
             if self.physique.can_jump():
                 self.fleur.change_y = VITESSE_SAUT
 
