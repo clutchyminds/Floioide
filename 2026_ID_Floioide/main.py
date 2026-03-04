@@ -1,11 +1,7 @@
 import arcade
 import os
 from sources.constantes import *
-from sources.entities import Ennemi, LeBoss
-
-# réglages de déplacement
-VITESSE_MARCHE = 5
-VITESSE_SAUT = 12
+from sources.entities import Ennemi, LeBoss, Joueur, Projectile
 
 class MonJeu(arcade.View):
     def __init__(self):
@@ -14,128 +10,103 @@ class MonJeu(arcade.View):
         self.tiroir_ennemis = arcade.SpriteList()
         self.tiroir_murs = arcade.SpriteList()
         self.tiroir_decor = arcade.SpriteList()
+        self.tiroir_tirs = arcade.SpriteList()
+        
         self.fleur = None
         self.physique = None
-        self.cam = arcade.camera.Camera2D()
-        # on charge les sons au début pour pas les recharger à chaque fois
-        self.son_saut = arcade.load_sound(os.path.join(DOSSIER_DATA, "sons", "saut.wav"))
-        self.son_deplacement = arcade.load_sound(os.path.join(DOSSIER_DATA, "sons", "deplacement.ogg"))
-        # variable qui garde en mémoire le son qui joue, pour pouvoir l'arrêter
-        self.son_deplacement_en_cours = None
+        
+        # --- NOUVEAU SYSTEME DE CAMERA ---
+        self.camera_jeu = arcade.camera.Camera2D()
+        
+        self.gauche_pressee = False
+        self.droite_pressee = False
+        self.z_presse = False
 
     def setup(self):
-        # 1. joueur
-        p_path = os.path.join(DOSSIER_DATA, "player", "player.png")
-        try:
-            self.fleur = arcade.Sprite(p_path, 0.4)
-        except:
-            self.fleur = arcade.Sprite(":resources:images/items/star.png", 0.5)
-        
-        # SPAWN PLUS HAUT (y=1500)
-        self.fleur.center_x = 1200 
-        self.fleur.center_y = 1500
+        self.fleur = Joueur(1200, 1500)
         self.tiroir_fleur.append(self.fleur)
 
-        # 2. map
         m_path = os.path.join(DOSSIER_MAPS, "map.tmj")
         try:
             ma_map = arcade.tilemap.load_tilemap(m_path, scaling=2)
             self.tiroir_murs = ma_map.sprite_lists.get("hit-box", arcade.SpriteList())
             self.tiroir_decor = ma_map.sprite_lists.get("back-ground", arcade.SpriteList())
-            print("map chargée")
-        except Exception as e:
-            print(f"erreur map : {e}")
+        except Exception as e: print(f"Erreur map: {e}")
 
-        # 3. physique
+        # Moteur physique standard pour le saut et la gravite
         self.physique = arcade.PhysicsEnginePlatformer(self.fleur, gravity_constant=0.5, walls=self.tiroir_murs)
 
-        # 4. ennemis
-        self.tiroir_ennemis.append(Ennemi(self.fleur.center_x + 200, self.fleur.center_y))
-        self.tiroir_ennemis.append(LeBoss(self.fleur.center_x + 500, self.fleur.center_y + 100))
-
     def on_key_press(self, key, modifiers):
-        # contrôles thomas
-        if key == arcade.key.LEFT:
-            self.fleur.change_x = -VITESSE_MARCHE
-            self.lancer_son_deplacement()
-        elif key == arcade.key.RIGHT:
-            self.fleur.change_x = VITESSE_MARCHE
-            self.lancer_son_deplacement()
-        # touche échap pour quitter le jeu
-        elif key == arcade.key.ESCAPE:
-            arcade.exit()
-        # on peut sauter avec la touche ESPACE ou FLECHE HAUT
-        elif key == arcade.key.SPACE or key == arcade.key.UP:
-            if self.physique.can_jump():
-                self.fleur.change_y = VITESSE_SAUT
-                arcade.play_sound(self.son_saut)
-
-    def lancer_son_deplacement(self):
-        # on coupe l'ancien son avant d'en jouer un nouveau (sinon ils se jouent en même)
-        self.arreter_son_deplacement()
-        # loop=True : le son se répète en boucle tant que la fleur marche
-        self.son_deplacement_en_cours = arcade.play_sound(self.son_deplacement, loop=True)
-
-    def arreter_son_deplacement(self):
-        # on vérifie qu'un son est bien en train de jouer avant de l'arrêter
-        if self.son_deplacement_en_cours:
-            arcade.stop_sound(self.son_deplacement_en_cours)
-            self.son_deplacement_en_cours = None
+        if key == arcade.key.Q: self.gauche_pressee = True
+        elif key == arcade.key.D: self.droite_pressee = True
+        elif key == arcade.key.Z: self.z_presse = True
+        elif key == arcade.key.LSHIFT: self.fleur.en_dash = True
+        elif key == arcade.key.SPACE:
+            # On ne peut sauter que si on n'est pas en train de grimper
+            if self.physique.can_jump() and not self.fleur.en_escalade:
+                self.fleur.change_y = 12
 
     def on_key_release(self, key, modifiers):
-        if key == arcade.key.LEFT or key == arcade.key.RIGHT:
-            self.fleur.change_x = 0
-            self.arreter_son_deplacement()
+        if key == arcade.key.Q: self.gauche_pressee = False
+        elif key == arcade.key.D: self.droite_pressee = False
+        elif key == arcade.key.Z: self.z_presse = False
+        elif key == arcade.key.LSHIFT: self.fleur.en_dash = False
 
-    def on_draw(self):
-        self.clear()
-        self.cam.use()
-        if self.tiroir_decor: self.tiroir_decor.draw()
-        if self.tiroir_murs: self.tiroir_murs.draw()
-        self.tiroir_ennemis.draw()
-        self.tiroir_fleur.draw()
+    def on_mouse_press(self, x, y, button, modifiers):
+        if button == arcade.MOUSE_BUTTON_LEFT:
+            # Correction : on utilise unproject au lieu de map_screen_to_world
+            pos_monde = self.camera_jeu.unproject((x, y))
+            
+            un_tir = Projectile(self.fleur.center_x, self.fleur.center_y, pos_monde[0], pos_monde[1], 10)
+            self.tiroir_tirs.append(un_tir)
 
     def on_update(self, delta_time):
-        if self.physique:
+        # 1. Deplacement horizontal
+        v = 10 if self.fleur.en_dash else 5
+        self.fleur.change_x = (self.droite_pressee - self.gauche_pressee) * v
+
+        # 2. Logique Grimpe vs Physique
+        hit_list = arcade.check_for_collision_with_list(self.fleur, self.tiroir_murs)
+        if hit_list and self.z_presse:
+            self.fleur.en_escalade = True
+            self.fleur.change_y = 4 
+            # On deplace manuellement pour ignorer la gravite pendant la grimpe
+            self.fleur.center_y += self.fleur.change_y
+        else:
+            self.fleur.en_escalade = False
             self.physique.update()
-        for e in self.tiroir_ennemis:
-            e.update_animation(delta_time)
-        self.cam.position = (self.fleur.center_x, self.fleur.center_y)
 
-        # si la fleur ne bouge plu,s on coupe le son de sa marche
-        if self.fleur.change_x == 0:
-            self.arreter_son_deplacement()
+        # 3. Animations et tirs
+        self.fleur.update_animation(delta_time)
+        for t in self.tiroir_tirs: 
+            t.update()
+            t.update_animation(delta_time)
 
-class Menu(arcade.View):
-    def __init__(self, jeu):
-        super().__init__()
-        # on garde le jeu dans une variable pour pas le recharger à chaque fois
-        self.jeu = jeu
+        # 4. CAMERA : Centrage sur le joueur (Methode stable 3.0)
+        self.camera_jeu.position = (self.fleur.center_x, self.fleur.center_y)
 
     def on_draw(self):
         self.clear()
-        arcade.draw_text("FLOIOIDE - ENTREE", LARGEUR/2, HAUTEUR/2, arcade.color.WHITE, 20, anchor_x="center")
+        # On utilise la camera avant de dessiner
+        self.camera_jeu.use()
+        
+        self.tiroir_decor.draw()
+        self.tiroir_murs.draw()
+        self.tiroir_ennemis.draw()
+        self.tiroir_tirs.draw()
+        self.tiroir_fleur.draw()
 
+class Menu(arcade.View):
+    def on_draw(self):
+        self.clear()
+        arcade.draw_text("FLOIOIDE - ENTREE (ZQSD + ESPACE)", LARGEUR/2, HAUTEUR/2, arcade.color.WHITE, 20, anchor_x="center")
     def on_key_press(self, key, mod):
         if key == arcade.key.ENTER:
-            # on affiche le jeu
-            self.window.show_view(self.jeu)
+            v = MonJeu(); v.setup(); self.window.show_view(v)
 
 def main():
     win = arcade.Window(LARGEUR, HAUTEUR, TITRE)
-
-    # on affiche un message de chargement pour patienter...
-    win.clear()
-    arcade.draw_text("Chargement...", LARGEUR/2, HAUTEUR/2, arcade.color.WHITE, 20, anchor_x="center")
-    win.flip()
-
-    # on charge le jeu
-    jeu = MonJeu()
-    jeu.setup()
-
-    # on affiche le menu
-    win.show_view(Menu(jeu))
+    win.show_view(Menu())
     arcade.run()
 
-if __name__ == "__main__":
-    main()
+if __name__ == "__main__": main()
