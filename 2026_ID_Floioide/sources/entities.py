@@ -1,7 +1,6 @@
 import arcade
 import os
-import math
-from sources.constantes import DOSSIER_DATA, DISTANCE_MAX_TIR
+from sources.constantes import DOSSIER_DATA
 
 class EntiteAnimee(arcade.Sprite):
     def __init__(self, x, y, taille=1.0):
@@ -31,27 +30,32 @@ class Joueur(EntiteAnimee):
         self.en_escalade = False
         self.en_dash = False
 
-        # 1. Chargement des textures
-        self.tex_idle = arcade.load_texture(os.path.join(DOSSIER_DATA, "player", "player.png"))
-        
-        # Fonction utilitaire pour charger un dossier d'images
-        def charger_dossier(nom_dossier):
+        # 1. Chargement de l'image de base (Idle)
+        # Chemin selon ton image : data/player/player.png
+        self.tex_idle = arcade.load_texture(os.path.join(DOSSIER_DATA, "player", "player.png"))        
+        # 2. Chargement des animations (Toutes dans data/player/mouvements)
+        # Définir le chemin vers ton dossier regroupé
+        chemin_mouvements = os.path.join(DOSSIER_DATA, "player", "mouvements")
+
+        # Lister tous les fichiers présents dans ce dossier
+        tous_les_fichiers = sorted(os.listdir(chemin_mouvements))
+
+        # Fonction pour extraire les images selon le début de leur nom
+        def charger_liste(prefixe):
             liste = []
-            chemin = os.path.join(DOSSIER_DATA, nom_dossier)
-            if os.path.exists(chemin):
-                fichiers = sorted([f for f in os.listdir(chemin) if f.endswith(".png")])
-                for f in fichiers:
-                    liste.append(arcade.load_texture(os.path.join(chemin, f)))
+            for f in tous_les_fichiers:
+                if f.startswith(prefixe) and f.endswith(".png"):
+                    liste.append(arcade.load_texture(os.path.join(chemin_mouvements, f)))
             return liste
 
-        self.anims_marche = charger_dossier("mouvement")
-        self.anims_dash = charger_dossier("dash")
-        self.anims_escalade = charger_dossier("escalade")
+        # Assigner les animations en fonction des noms visibles sur ta capture
+        self.anims_marche = charger_liste("avancer")   # Charge avancer (1).png, etc.
+        self.anims_dash = charger_liste("Dash")        # Charge Dash.png
+        self.anims_escalade = charger_liste("grimper") # Charge grimper (1).png, etc.
 
         self.texture = self.tex_idle
 
     def update_animation(self, delta_time=1/60):
-        # --- CHOIX DE LA LISTE D'ANIMATIONS ---
         nouvelle_liste = []
 
         if self.en_escalade:
@@ -61,33 +65,43 @@ class Joueur(EntiteAnimee):
         elif abs(self.change_x) > 0.1:
             nouvelle_liste = self.anims_marche
 
-        # --- APPLICATION DE L'ANIMATION ---
         if nouvelle_liste:
             self.textures = nouvelle_liste
             super().update_animation(delta_time)
         else:
             self.texture = self.tex_idle
 
-        # Orientation du regard
+        # Orientation
         if self.change_x > 0:
             self.flipped_horizontally = False
         elif self.change_x < 0:
             self.flipped_horizontally = True
 
-            
-# Garde tes classes Boss, PetitMob et Projectile en dessous...
+        # --- À vérifier/ajouter à la fin de update_animation dans entities.py ---
+
+        # Orientation du regard (miroir horizontal)
+        if self.change_x > 0:
+            self.flipped_horizontally = False  # Regarde à droite
+        elif self.change_x < 0:
+            self.flipped_horizontally = True   # Regarde à gauche (miroir)
+        # --- À AJOUTER À LA FIN DE entities.py ---
+
 class Boss(EntiteAnimee):
     def __init__(self, x, y):
         super().__init__(x, y, taille=2.0)
+        # On cherche dans data/boss/test comme indiqué dans tes dossiers
         d = os.path.join(DOSSIER_DATA, "boss", "test")
-        for i in range(33):
-            try:
-                self.textures.append(arcade.load_texture(os.path.join(d, f"attaque{i:02d}.png")))
-            except: pass
-        self.texture = self.textures[0] if self.textures else arcade.make_soft_square_texture(100, (255,0,0))
+        if os.path.exists(d):
+            fichiers = sorted([f for f in os.listdir(d) if f.endswith(".png")])
+            for f in fichiers:
+                self.textures.append(arcade.load_texture(os.path.join(d, f)))
+        
+        # Texture de secours si le dossier est vide
+        self.texture = self.textures[0] if self.textures else arcade.make_soft_square_texture(100, (255, 0, 0))
 
 class PetitMob(EntiteAnimee):
     def __init__(self, x, y):
         super().__init__(x, y, taille=0.5)
         self.vitesse = 2
-        self.texture = arcade.make_soft_square_texture(40, arcade.color.RED)
+        # Utilise un carré rouge temporaire ou une image de mobtest
+        self.texture = arcade.make_soft_square_texture(40, (255, 0, 0))

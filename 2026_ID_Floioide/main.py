@@ -41,7 +41,7 @@ class MonJeu(arcade.View):
             self.tiroirs["decor"] = ma_map.sprite_lists.get("back-ground", arcade.SpriteList())
             
             # --- Logique de Spawn via Tiled ---
-            spawn_x, spawn_y = 300, 300 # Valeurs de secours
+            spawn_x, spawn_y = 300, 3000 # Valeurs de secours
             
             if "Positions" in ma_map.object_lists:
                 for obj in ma_map.object_lists["Positions"]:
@@ -87,19 +87,33 @@ class MonJeu(arcade.View):
         
         self.fleur.change_x = (self.inputs.droite - self.inputs.gauche) * vitesse
 
-        # 2. Escalade AUTOMATIQUE
-        # On vérifie si la plante touche un mur
-        murs_touches = arcade.check_for_collision_with_list(self.fleur, self.tiroirs["murs"])
+        # --- LOGIQUE DE DÉPLACEMENT ET ESCALADE SIMPLE ---
+        self.fleur.en_escalade = False
+        vitesse = VITESSE_MARCHE
         
-        # Si contact mur + appui vers le mur (Q ou D)
+        # Gestion du Dash
+        if self.inputs.shift and self.fleur.eau > 0:
+            vitesse = VITESSE_DASH
+            self.fleur.en_dash = True
+            self.fleur.eau = max(0, self.fleur.eau - 0.3)
+        else:
+            self.fleur.en_dash = False
+        
+        # Calcul de la direction horizontale
+        self.fleur.change_x = (self.inputs.droite - self.inputs.gauche) * vitesse
+
+        # Vérification du contact avec un mur
+        murs_touches = arcade.check_for_collision_with_list(self.fleur, self.tiroirs["murs"])
+
+        # Si on touche un mur ET qu'on appuie sur une direction (Q ou D)
         if murs_touches and (self.inputs.droite or self.inputs.gauche):
             self.fleur.en_escalade = True
-            self.fleur.change_y = 4      # Vitesse de montée
-            self.fleur.center_y += 4    # Force le déplacement vers le haut
-        else:
-            self.fleur.en_escalade = False
-            self.physique.update()      # Physique normale (gravité)
-
+            # On contre la gravité en montant un peu
+            self.fleur.change_y = 4 
+        
+        # On laisse TOUJOURS le moteur physique gérer la position et les collisions
+        self.physique.update()
+        
         # 3. Animations et Caméra
         self.fleur.update_animation(delta_time)
         self.camera_jeu.position = (self.fleur.center_x, self.fleur.center_y)
