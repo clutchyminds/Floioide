@@ -77,15 +77,6 @@ class Joueur(EntiteAnimee):
         elif self.change_x < 0:
             self.flipped_horizontally = True
 
-        # --- À vérifier/ajouter à la fin de update_animation dans entities.py ---
-
-        # Orientation du regard (miroir horizontal)
-        if self.change_x > 0:
-            self.flipped_horizontally = False  # Regarde à droite
-        elif self.change_x < 0:
-            self.flipped_horizontally = True   # Regarde à gauche (miroir)
-        # --- À AJOUTER À LA FIN DE entities.py ---
-
 class Boss(EntiteAnimee):
     def __init__(self, x, y):
         super().__init__(x, y, taille=2.0)
