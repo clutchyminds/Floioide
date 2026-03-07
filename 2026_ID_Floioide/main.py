@@ -1,76 +1,151 @@
 import arcade
+import random
 import os
 from sources.constantes import *
-from sources.entities import Ennemi, LeBoss
+from sources.entities import Joueur, Boss, PetitMob
+from sources.inputs import InputHandler
+from sources.interface import HUD
+from sources.logic import gerer_collisions
 
 class MonJeu(arcade.View):
     def __init__(self):
         super().__init__()
-        self.tiroir_fleur = arcade.SpriteList()
-        self.tiroir_ennemis = arcade.SpriteList()
-        self.tiroir_murs = arcade.SpriteList()
-        self.tiroir_arriere = arcade.SpriteList()
+        
+        # 1. Organisation des listes d'objets (SpriteLists)
+        self.tiroirs = {
+            "murs": arcade.SpriteList(),
+            "decor": arcade.SpriteList(),
+            "ennemis": arcade.SpriteList(),
+            "tirs": arcade.SpriteList(),
+            "joueur": arcade.SpriteList()
+        }
+        
+        # 2. Initialisation des outils
         self.fleur = None
         self.physique = None
-        self.cam = arcade.camera.Camera2D()
+        self.inputs = InputHandler()
+        self.hud = HUD()
+        self.camera_jeu = arcade.camera.Camera2D()
+        self.camera_gui = arcade.camera.Camera2D()
+        
+        self.temps_depuis_dernier_mob = 0
 
     def setup(self):
-        # 1. Joueur (data/player/player.png)
-        p_path = os.path.join(DOSSIER_DATA, "player", "player.png")
-        try:
-            self.fleur = arcade.Sprite(p_path, 0.4)
-        except:
-            print("Image player.png introuvable")
-            self.fleur = arcade.Sprite(":resources:images/items/star.png", 0.5)
+        """ Configuration initiale du niveau et du spawn """
         
-        self.fleur.center_x = 200
-        self.fleur.center_y = 300
-        self.tiroir_fleur.append(self.fleur)
-
-        # 2. Map (On force le passage malgre l erreur de tuile 310)
+        # 1. Chargement de la Map Tiled
         m_path = os.path.join(DOSSIER_MAPS, "map.tmj")
         try:
-            # On charge la map normalement
             ma_map = arcade.tilemap.load_tilemap(m_path, scaling=2)
-            self.tiroir_murs = ma_map.sprite_lists.get("hit-box", arcade.SpriteList())
-            self.tiroir_arriere = ma_map.sprite_lists.get("base", arcade.SpriteList())
-            print("Map chargee")
+            self.tiroirs["murs"] = ma_map.sprite_lists.get("hit-box", arcade.SpriteList())
+            self.tiroirs["decor"] = ma_map.sprite_lists.get("back-ground", arcade.SpriteList())
+            
+            # --- Logique de Spawn via Tiled ---
+            spawn_x, spawn_y = 300, 3000 # Valeurs de secours
+            
+            if "Positions" in ma_map.object_lists:
+                for obj in ma_map.object_lists["Positions"]:
+                    if obj.name == "spawn_plante":
+                        spawn_x = obj.shape[0] * 2  # Multiplié par le scaling
+                        spawn_y = obj.shape[1] * 2
+                        print(f"Spawn chargé depuis Tiled : {spawn_x}, {spawn_y}")
+                        break
+            
+            self.fleur = Joueur(spawn_x, spawn_y)
+            
         except Exception as e:
-            print(f"Erreur map : {e}")
-            print("Conseil : Ouvre Tiled et supprime la tuile a la position (23, 84)")
+            print(f"Erreur chargement map : {e}")
+            self.fleur = Joueur(500, 500)
 
-        # 3. Physique
-        self.physique = arcade.PhysicsEnginePlatformer(self.fleur, gravity_constant=0.5, walls=self.tiroir_murs)
+        self.tiroirs["joueur"].append(self.fleur)
 
-        # 4. Ennemis (Spawn a cote du joueur)
-        self.tiroir_ennemis.append(Ennemi(self.fleur.center_x + 300, self.fleur.center_y + 100))
-        self.tiroir_ennemis.append(LeBoss(self.fleur.center_x + 600, self.fleur.center_y + 150))
+        # 2. Moteur Physique (Platformer)
+        self.physique = arcade.PhysicsEnginePlatformer(
+            self.fleur, 
+            gravity_constant=0.5, 
+            walls=self.tiroirs["murs"]
+        )
 
-    def on_draw(self):
-        self.clear()
-        self.cam.use()
-        if self.tiroir_arriere: self.tiroir_arriere.draw()
-        if self.tiroir_murs: self.tiroir_murs.draw()
-        self.tiroir_ennemis.draw()
-        self.tiroir_fleur.draw()
+    def on_key_press(self, key, modifiers):
+        self.inputs.on_key_press(key)
+        # Saut simple (uniquement si au sol)
+        if key == arcade.key.SPACE and self.physique.can_jump():
+            self.fleur.change_y = VITESSE_SAUT
+
+    def on_key_release(self, key, modifiers):
+        self.inputs.on_key_release(key)
 
     def on_update(self, delta_time):
-        if self.physique: self.physique.update()
-        for e in self.tiroir_ennemis: e.update_animation(delta_time)
-        self.cam.position = (self.fleur.center_x, self.fleur.center_y)
+        # 1. Gestion du Dash et de la vitesse
+        self.fleur.en_dash = False
+        vitesse = VITESSE_MARCHE
+        
+        if self.inputs.shift and self.fleur.eau > 0:
+            vitesse = VITESSE_DASH
+            self.fleur.en_dash = True
+            self.fleur.eau = max(0, self.fleur.eau - 0.3) # Consomme de l'eau
+        
+        self.fleur.change_x = (self.inputs.droite - self.inputs.gauche) * vitesse
 
-class Menu(arcade.View):
+        # --- LOGIQUE DE DÉPLACEMENT ET ESCALADE SIMPLE ---
+        self.fleur.en_escalade = False
+        vitesse = VITESSE_MARCHE
+        
+        # Gestion du Dash
+        if self.inputs.shift and self.fleur.eau > 0:
+            vitesse = VITESSE_DASH
+            self.fleur.en_dash = True
+            self.fleur.eau = max(0, self.fleur.eau - 0.3)
+        else:
+            self.fleur.en_dash = False
+        
+        # Calcul de la direction horizontale
+        self.fleur.change_x = (self.inputs.droite - self.inputs.gauche) * vitesse
+
+        # Vérification du contact avec un mur
+        murs_touches = arcade.check_for_collision_with_list(self.fleur, self.tiroirs["murs"])
+
+        # Si on touche un mur ET qu'on appuie sur une direction (Q ou D)
+        if murs_touches and (self.inputs.droite or self.inputs.gauche):
+            self.fleur.en_escalade = True
+            # On contre la gravité en montant un peu
+            self.fleur.change_y = 4 
+        
+        # On laisse TOUJOURS le moteur physique gérer la position et les collisions
+        self.physique.update()
+        
+        # 3. Animations et Caméra
+        self.fleur.update_animation(delta_time)
+        self.camera_jeu.position = (self.fleur.center_x, self.fleur.center_y)
+
+        # 4. Collisions (Combat)
+        gerer_collisions(self.tiroirs["tirs"], self.tiroirs["ennemis"])
+        
+        # 5. Apparition aléatoire d'ennemis
+        self.temps_depuis_dernier_mob += delta_time
+        if self.temps_depuis_dernier_mob > 5.0:
+            offset = 400 if random.random() > 0.5 else -400
+            ennemi = PetitMob(self.fleur.center_x + offset, self.fleur.center_y + 100)
+            self.tiroirs["ennemis"].append(ennemi)
+            self.temps_depuis_dernier_mob = 0
+
     def on_draw(self):
         self.clear()
-        arcade.draw_text("FLOIOIDE - ENTREE", LARGEUR/2, HAUTEUR/2, arcade.color.WHITE, 20, anchor_x="center")
-    def on_key_press(self, key, mod):
-        if key == arcade.key.ENTER:
-            v = MonJeu(); v.setup()
-            self.window.show_view(v)
+        
+        # Dessin du jeu (Caméra qui suit la plante)
+        self.camera_jeu.use()
+        for liste in self.tiroirs.values():
+            liste.draw()
+        
+        # Dessin de l'interface (Caméra fixe)
+        self.camera_gui.use()
+        self.hud.dessiner(self.fleur)
 
 def main():
-    win = arcade.Window(LARGEUR, HAUTEUR, TITRE)
-    win.show_view(Menu())
+    window = arcade.Window(LARGEUR, HAUTEUR, TITRE)
+    game = MonJeu()
+    game.setup()
+    window.show_view(game)
     arcade.run()
 
 if __name__ == "__main__":
