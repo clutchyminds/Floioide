@@ -5,15 +5,20 @@ from sources.constantes import DOSSIER_DATA
 class EntiteAnimee(arcade.Sprite):
     def __init__(self, x, y, taille=1.0):
         super().__init__()
+        self.en_escalade = False
         self.center_x = x
         self.center_y = y
+        self.en_escalade = False
         self.scale = taille
         self.textures = []
         self.frame_actuelle = 0
         self.temps_ecoule = 0
         self.vitesse_animation = 0.15
+        self.timer_dash = 0  # Temps restant avant le prochain dash
 
     def update_animation(self, delta_time=1/60):
+        if abs(self.change_y) < 0.1:
+            self.en_escalade = False
         if not self.textures:
             return
         self.temps_ecoule += delta_time
