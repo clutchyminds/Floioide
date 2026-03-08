@@ -38,6 +38,9 @@ class MonJeu(arcade.View):
 
         self.lecteur_musique = None
 
+        self.son_saut = arcade.load_sound(os.path.join(DOSSIER_DATA, "sounds", "saut.wav"))
+        self.son_pas = arcade.load_sound(os.path.join(DOSSIER_DATA, "sounds", "deplacement.ogg"))
+        self.lecteur_pas = None 
 
     def setup(self):
         """ Configuration initiale du niveau et du spawn """
@@ -95,42 +98,72 @@ class MonJeu(arcade.View):
         # Saut simple (uniquement si au sol)
         if key == arcade.key.SPACE and self.physique.can_jump():
             self.fleur.change_y = VITESSE_SAUT
+        if key == arcade.key.SPACE or key == arcade.key.Z:
+            if self.physique.can_jump():
+                arcade.play_sound(self.son_saut, volume=0.3)
 
     def on_key_release(self, key, modifiers):
         self.inputs.on_key_release(key)
 
     def on_update(self, delta_time):
-        # 1. CALCUL DE LA VITESSE ET DASH
-        vitesse = VITESSE_MARCHE
-        if self.inputs.shift and self.fleur.eau > 0:
-            vitesse = VITESSE_DASH
-            self.fleur.en_dash = True
-            self.fleur.eau = max(0, self.fleur.eau - 0.3)
-        else:
-            self.fleur.en_dash = False
-        
-        # On définit la direction voulue
-        self.fleur.change_x = (self.inputs.droite - self.inputs.gauche) * vitesse
+        # --- 1. GESTION DES TIMERS ET ÉTATS ---
+        if self.fleur.timer_dash > 0:
+            self.fleur.timer_dash -= delta_time
+            
+        # Le dash dure 0.2 seconde (entre 7.0 et 6.8)
+        est_en_train_de_dasher = self.fleur.timer_dash > 6.8 
+        self.fleur.en_dash = est_en_train_de_dasher
 
-        # 2. MISE À JOUR DE L'ORIENTATION (Indispensable AVANT la physique)
-        # On appelle l'animation ici pour qu'elle lise le change_x qu'on vient de définir
+        # --- 2. CALCUL DE LA VITESSE ET DÉCLENCHEMENT ---
+        vitesse = VITESSE_MARCHE
+        
+        # Déclenchement du dash
+        if self.inputs.shift and self.fleur.timer_dash <= 0 and self.fleur.eau >= 10:
+            self.fleur.eau -= 10
+            self.fleur.timer_dash = 7.0
+            self.fleur.change_y = 0 
+
+        if est_en_train_de_dasher:
+            vitesse = VITESSE_DASH
+            self.fleur.change_y = 0 
+        
+        # Calcul de la direction horizontale
+        direction = self.inputs.droite - self.inputs.gauche
+        if direction == 0 and est_en_train_de_dasher:
+            direction = 1 if not self.fleur.flipped_horizontally else -1
+            
+        self.fleur.change_x = direction * vitesse
+
+        # --- 3. ANIMATION ET ORIENTATION ---
+        # On le fait avant de déplacer le sprite pour que l'image soit la bonne
         self.fleur.update_animation(delta_time)
 
-        # 3. LOGIQUE D'ESCALADE SIMPLE
-        murs_touches = arcade.check_for_collision_with_list(self.fleur, self.tiroirs["murs"])
-        if murs_touches and (self.inputs.droite or self.inputs.gauche):
-            self.fleur.en_escalade = True
-            self.fleur.change_y = 4 
+        # --- 4. PHYSIQUE ET COLLISIONS (Optimisée) ---
+        if est_en_train_de_dasher:
+            self.fleur.center_x += self.fleur.change_x
+            if arcade.check_for_collision_with_list(self.fleur, self.tiroirs["murs"]):
+                self.fleur.center_x -= self.fleur.change_x
         else:
-            self.fleur.en_escalade = False
-            # On n'applique la physique (gravité) que si on ne grimpe pas
-            self.physique.update()
+            # On détecte les murs autour du joueur
+            murs_proches = arcade.check_for_collision_with_list(self.fleur, self.tiroirs["murs"])
+            direction_voulue = self.inputs.droite - self.inputs.gauche
 
-        # 4. CAMÉRA ET COMBAT
+            # GRIMPE : Si on touche un mur ET qu'on pousse vers lui
+            if murs_proches and direction_voulue != 0:
+                self.fleur.en_escalade = True
+                self.fleur.change_x = 0  # On ne s'enfonce pas dans le mur
+                self.fleur.change_y = VITESSE_MARCHE # On monte verticalement
+                self.fleur.center_y += self.fleur.change_y
+            else:
+                # PHYSIQUE NORMALE
+                self.fleur.en_escalade = False
+                self.physique.update()
+
+        # --- 5. CAMÉRA ET ÉVÉNEMENTS DU MONDE ---
         self.camera_jeu.position = (self.fleur.center_x, self.fleur.center_y)
         gerer_collisions(self.tiroirs["tirs"], self.tiroirs["ennemis"])
         
-        # 5. APPARITION ENNEMIS
+        # Apparition ennemis
         self.temps_depuis_dernier_mob += delta_time
         if self.temps_depuis_dernier_mob > 5.0:
             offset = 400 if random.random() > 0.5 else -400
@@ -138,24 +171,37 @@ class MonJeu(arcade.View):
             self.tiroirs["ennemis"].append(ennemi)
             self.temps_depuis_dernier_mob = 0
 
-        # --- SYSTÈME DE PLUIE ALÉATOIRE ---
-        # 1% de chance qu'une goutte apparaisse à chaque frame
+        # --- GESTION DES COLLISIONS AVEC LES GOUTTES ---
+        gouttes_touchees = arcade.check_for_collision_with_list(self.fleur, self.tiroirs["pluie"])
+        for goutte in gouttes_touchees:
+            goutte.remove_from_sprite_lists()
+            # On augmente l'eau de la plante (par exemple +5 par goutte)
+            self.fleur.eau = min(100, self.fleur.eau + 2)
+
+        # --- 6. SYSTÈME DE PLUIE ---
         if random.random() < 0.1: 
-            # Apparaît au dessus du joueur, mais avec un décalage horizontal aléatoire
             x = self.fleur.center_x + random.randint(-600, 600)
             y = self.fleur.center_y + 500
             goutte = Goutte(x, y)
             self.tiroirs["pluie"].append(goutte)
 
-        # Mise à jour de la position des gouttes
         self.tiroirs["pluie"].update()
 
-        # 2. COLLISIONS : La plante boit les gouttes
-        gouttes_bues = arcade.check_for_collision_with_list(self.fleur, self.tiroirs["pluie"])
-        for g in gouttes_bues:
-            self.fleur.eau = min(100, self.fleur.eau + 0.5) # +5% d'eau par goutte
-            g.remove_from_sprite_lists()
 
+        # NETTOYAGE : Supprimer ce qui est hors écran (très important contre le lag)
+        for goutte in self.tiroirs["pluie"]:
+            if goutte.top < -100:
+                goutte.remove_from_sprite_lists()
+
+        # --- 7. SONS DE PAS ---
+        if abs(self.fleur.change_x) > 0.1 and self.physique.can_jump() and not est_en_train_de_dasher:
+            if not self.lecteur_pas:
+                self.lecteur_pas = arcade.play_sound(self.son_pas, volume=0.1, loop=True)
+        else:
+            if self.lecteur_pas:
+                arcade.stop_sound(self.lecteur_pas)
+                self.lecteur_pas = None
+                
     def on_draw(self):
         self.clear()
         
