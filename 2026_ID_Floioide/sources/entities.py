@@ -1,6 +1,6 @@
 import arcade
 import os
-from sources.constantes import DOSSIER_DATA
+from sources.constantes import DOSSIER_DATA, VITESSE_MARCHE
 
 class EntiteAnimee(arcade.Sprite):
     def __init__(self, x, y, taille=1.0):
@@ -35,6 +35,7 @@ class Joueur(EntiteAnimee):
         self.en_escalade = False
         self.en_dash = False
 
+        
         # 1. Chargement de l'image de base (Idle)
         # Chemin selon l'image : data/player/player.png
         self.tex_idle = arcade.load_texture(os.path.join(DOSSIER_DATA, "player", "player.png"))        
@@ -76,11 +77,26 @@ class Joueur(EntiteAnimee):
         else:
             self.texture = self.tex_idle
 
-        # Orientation
-        if self.change_x > 0:
-            self.flipped_horizontally = False
-        elif self.change_x < 0:
-            self.flipped_horizontally = True
+        if self.temps_ecoule > self.vitesse_animation:
+            self.temps_ecoule = 0
+            self.frame_actuelle = (self.frame_actuelle + 1) % len(self.textures)
+            
+            # On récupère la texture et on lui applique le flip
+            tex = self.textures[self.frame_actuelle]
+            if hasattr(self, "flipped_horizontally") and self.flipped_horizontally:
+                self.texture = tex.flip_left_right() # Retourne l'image
+            else:
+                self.texture = tex
+
+    def escalader(self, liste_murs, direction_x):
+        # On vérifie s'il y a un mur juste à côté de nous dans la direction où on avance
+        mur_touche = arcade.check_for_collision_with_list(self, liste_murs)
+        
+        if mur_touche and direction_x != 0:
+            self.en_escalade = True
+            self.change_y = VITESSE_MARCHE # On monte à la même vitesse qu'on marche
+        else:
+            self.en_escalade = False
 
 class Boss(EntiteAnimee):
     def __init__(self, x, y):

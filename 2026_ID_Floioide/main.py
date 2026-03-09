@@ -7,6 +7,113 @@ from sources.inputs import InputHandler
 from sources.interface import HUD
 from sources.logic import gerer_collisions
 
+
+class CinematiqueView(arcade.View):
+    def __init__(self):
+        super().__init__()
+        self.scene_actuelle = 1
+        self.timer_animation = 0
+        chemin_musique = os.path.join(DOSSIER_DATA, "sounds", "Popi.mp3")
+        self.musique_fond = arcade.load_sound(chemin_musique)
+        self.lecteur_musique = arcade.play_sound(self.musique_fond, volume=0.5, loop=True)
+
+
+        # Liste des 12 phrases pour l'histoire
+        self.textes = [
+            "texte 1",
+            "texte 2",
+            "texte 3",
+            "texte 4",
+            "texte 5",
+            "texte 6",
+            "texte 7",
+            "texte 8",
+            "texte 9",
+            "texte 10",
+            "texte 11",
+            "texte 12"
+        ]
+        
+        self.texte_affiche = ""
+        self.index_lettre = 0
+        self.timer_texte = 0
+        self.charger_scene()
+
+    def charger_scene(self):
+        # construction du chemin vers les images 
+        chemin = os.path.join(DOSSIER_DATA, "intro")
+        nom1 = f"image {self.scene_actuelle}.1.PNG"
+        nom2 = f"image {self.scene_actuelle}.2.PNG"
+        
+        self.img1 = arcade.load_texture(os.path.join(chemin, nom1))
+        self.img2 = arcade.load_texture(os.path.join(chemin, nom2))
+        self.texture_active = self.img1
+        
+        self.texte_affiche = ""
+        self.index_lettre = 0
+
+    def on_update(self, delta_time):
+        # Animation : On alterne entre l'image .1 et .2 toutes les 0.5s
+        self.timer_animation += delta_time
+        if self.timer_animation > 0.5:
+            self.texture_active = self.img2 if self.texture_active == self.img1 else self.img1
+            self.timer_animation = 0
+
+        # Effet d'écriture automatique
+        if self.index_lettre < len(self.textes[self.scene_actuelle - 1]):
+            self.timer_texte += delta_time
+            if self.timer_texte > 0.04:
+                self.index_lettre += 1
+                self.texte_affiche = self.textes[self.scene_actuelle - 1][:self.index_lettre]
+                self.timer_texte = 0
+
+    def on_draw(self):
+        self.clear()
+        
+        # utilise draw_lrbt_rectangle_filled avec la texture si possible
+        # sinon dessine la texture via les coordonnées simples
+        
+        # Dans Arcade 3.0, pour dessiner une texture sur tout l'écran sans créer d'objet Rect :
+        arcade.draw_texture_rect(
+            self.texture_active, 
+            arcade.LBWH(0, 0, LARGEUR, HAUTEUR) # LBWH = Left, Bottom, Width, Height
+        )
+        
+        # Bandeau de texte noir en bas
+        # Ici on utilise directement LBWH qui est beaucoup plus simple que Rect
+        arcade.draw_rect_filled(
+            arcade.LBWH(0, 0, LARGEUR, 150),
+            arcade.color.BLACK_BEAN
+        )
+        
+        # Affichage du texte
+        arcade.draw_text(
+            self.texte_affiche, 
+            50, 80, 
+            arcade.color.WHITE, 
+            20, 
+            width=LARGEUR-100, 
+            multiline=True
+        )
+        
+        arcade.draw_text("Appuyez sur [ENTRÉE] pour continuer", LARGEUR - 350, 20, arcade.color.GRAY, 10)
+
+    def on_key_press(self, key, modifiers):
+        if key == arcade.key.ENTER:
+            if self.scene_actuelle < 12:
+                self.scene_actuelle += 1
+                self.charger_scene()
+            else:
+                # Arrêter la musique de l'intro
+                arcade.stop_sound(self.lecteur_musique)
+                
+                # Lancer le jeu
+                game_view = MonJeu()
+                game_view.setup()
+                self.window.show_view(game_view)
+
+
+
 class MonJeu(arcade.View):
     def __init__(self):
         super().__init__()
@@ -42,6 +149,9 @@ class MonJeu(arcade.View):
         self.son_pas = arcade.load_sound(os.path.join(DOSSIER_DATA, "sounds", "deplacement.ogg"))
         self.lecteur_pas = None 
 
+        self.show_debug = False
+        self.fps = 0
+
     def setup(self):
         """ Configuration initiale du niveau et du spawn """
         
@@ -65,7 +175,7 @@ class MonJeu(arcade.View):
             self.tiroirs["boss_test"] = ma_map.sprite_lists.get("boss-test", arcade.SpriteList())
 
             # --- Logique de Spawn ---
-            spawn_x, spawn_y = 300, 3000  # Valeurs de secours
+            spawn_x, spawn_y = 2026, 1700  # Valeurs de secours
             if "Positions" in ma_map.object_lists:
                 for obj in ma_map.object_lists["Positions"]:
                     if obj.name == "spawn_plante":
@@ -101,21 +211,28 @@ class MonJeu(arcade.View):
         if key == arcade.key.SPACE or key == arcade.key.Z:
             if self.physique.can_jump():
                 arcade.play_sound(self.son_saut, volume=0.3)
+        if key == arcade.key.F3:
+            self.show_debug = not self.show_debug
+
 
     def on_key_release(self, key, modifiers):
         self.inputs.on_key_release(key)
 
     def on_update(self, delta_time):
-        # --- 1. GESTION DES TIMERS ET ÉTATS ---
+        # 1. Calcul des FPS pour le menu F3
+        if delta_time > 0:
+            self.fps = 1 / delta_time
+
+        # 2. GESTION DU DASH (Timers et États)
         if self.fleur.timer_dash > 0:
             self.fleur.timer_dash -= delta_time
             
-        # Le dash dure 0.2 seconde (entre 7.0 et 6.8)
         est_en_train_de_dasher = self.fleur.timer_dash > 6.8 
         self.fleur.en_dash = est_en_train_de_dasher
 
-        # --- 2. CALCUL DE LA VITESSE ET DÉCLENCHEMENT ---
+        # 3. CALCUL DES MOUVEMENTS
         vitesse = VITESSE_MARCHE
+        direction_horizontale = self.inputs.droite - self.inputs.gauche
         
         # Déclenchement du dash
         if self.inputs.shift and self.fleur.timer_dash <= 0 and self.fleur.eau >= 10:
@@ -126,44 +243,58 @@ class MonJeu(arcade.View):
         if est_en_train_de_dasher:
             vitesse = VITESSE_DASH
             self.fleur.change_y = 0 
+            if direction_horizontale == 0:
+                direction_horizontale = -1 if self.fleur.flipped_horizontally else 1
         
-        # Calcul de la direction horizontale
-        direction = self.inputs.droite - self.inputs.gauche
-        if direction == 0 and est_en_train_de_dasher:
-            direction = 1 if not self.fleur.flipped_horizontally else -1
-            
-        self.fleur.change_x = direction * vitesse
+        self.fleur.change_x = direction_horizontale * vitesse
 
-        # --- 3. ANIMATION ET ORIENTATION ---
-        # On le fait avant de déplacer le sprite pour que l'image soit la bonne
-        self.fleur.update_animation(delta_time)
+        # 4. GESTION DU SENS DU SPRITE (Le "Flip")
+        if self.fleur.change_x < 0:
+            self.fleur.flipped_horizontally = True
+        elif self.fleur.change_x > 0:
+            self.fleur.flipped_horizontally = False
 
-        # --- 4. PHYSIQUE ET COLLISIONS (Optimisée) ---
+        # 5. PHYSIQUE ET ESCALADE
         if est_en_train_de_dasher:
+            # Mode Dash : déplacement simple sans gravité
             self.fleur.center_x += self.fleur.change_x
             if arcade.check_for_collision_with_list(self.fleur, self.tiroirs["murs"]):
                 self.fleur.center_x -= self.fleur.change_x
         else:
-            # On détecte les murs autour du joueur
-            murs_proches = arcade.check_for_collision_with_list(self.fleur, self.tiroirs["murs"])
+            # Vérification de l'escalade (hitbox imaginaire +2px)
             direction_voulue = self.inputs.droite - self.inputs.gauche
+            self.fleur.en_escalade = False 
 
-            # GRIMPE : Si on touche un mur ET qu'on pousse vers lui
-            if murs_proches and direction_voulue != 0:
+            # --- DANS ON_UPDATE (SECTION ESCALADE) ---
+        if direction_voulue != 0:
+            check_x = self.fleur.center_x + (direction_voulue * 2)
+            temp_sprite = arcade.Sprite()
+            temp_sprite.center_x = check_x
+            temp_sprite.center_y = self.fleur.center_y
+            
+            # CORRECTION : On accède directement à la propriété .hit_box
+            temp_sprite.hit_box = self.fleur.hit_box
+            
+            if arcade.check_for_collision_with_list(temp_sprite, self.tiroirs["murs"]):
                 self.fleur.en_escalade = True
-                self.fleur.change_x = 0  # On ne s'enfonce pas dans le mur
-                self.fleur.change_y = VITESSE_MARCHE # On monte verticalement
+
+            # Application du mouvement selon l'état
+            if self.fleur.en_escalade:
+                self.fleur.change_x = 0
+                self.fleur.change_y = VITESSE_MARCHE
                 self.fleur.center_y += self.fleur.change_y
             else:
-                # PHYSIQUE NORMALE
-                self.fleur.en_escalade = False
+                # Physique normale (gravité, saut) uniquement si on n'escalade pas
                 self.physique.update()
 
-        # --- 5. CAMÉRA ET ÉVÉNEMENTS DU MONDE ---
+        # 6. ANIMATIONS ET CAMÉRA
+        self.fleur.update_animation(delta_time)
         self.camera_jeu.position = (self.fleur.center_x, self.fleur.center_y)
+
+        # 7. LOGIQUE DE JEU (Collisions, Pluie, Ennemis)
         gerer_collisions(self.tiroirs["tirs"], self.tiroirs["ennemis"])
         
-        # Apparition ennemis
+        # Apparition des ennemis
         self.temps_depuis_dernier_mob += delta_time
         if self.temps_depuis_dernier_mob > 5.0:
             offset = 400 if random.random() > 0.5 else -400
@@ -171,29 +302,23 @@ class MonJeu(arcade.View):
             self.tiroirs["ennemis"].append(ennemi)
             self.temps_depuis_dernier_mob = 0
 
-        # --- GESTION DES COLLISIONS AVEC LES GOUTTES ---
+        # Système de pluie
+        if random.random() < 0.1: 
+            self.tiroirs["pluie"].append(Goutte(self.fleur.center_x + random.randint(-600, 600), self.fleur.center_y + 500))
+
+        self.tiroirs["pluie"].update()
+        
+        # Hydratation
         gouttes_touchees = arcade.check_for_collision_with_list(self.fleur, self.tiroirs["pluie"])
         for goutte in gouttes_touchees:
             goutte.remove_from_sprite_lists()
-            # On augmente l'eau de la plante (par exemple +5 par goutte)
             self.fleur.eau = min(100, self.fleur.eau + 2)
 
-        # --- 6. SYSTÈME DE PLUIE ---
-        if random.random() < 0.1: 
-            x = self.fleur.center_x + random.randint(-600, 600)
-            y = self.fleur.center_y + 500
-            goutte = Goutte(x, y)
-            self.tiroirs["pluie"].append(goutte)
-
-        self.tiroirs["pluie"].update()
-
-
-        # NETTOYAGE : Supprimer ce qui est hors écran (très important contre le lag)
         for goutte in self.tiroirs["pluie"]:
-            if goutte.top < -100:
+            if goutte.top < self.fleur.center_y - 400:
                 goutte.remove_from_sprite_lists()
 
-        # --- 7. SONS DE PAS ---
+        # 8. SONS DE PAS
         if abs(self.fleur.change_x) > 0.1 and self.physique.can_jump() and not est_en_train_de_dasher:
             if not self.lecteur_pas:
                 self.lecteur_pas = arcade.play_sound(self.son_pas, volume=0.1, loop=True)
@@ -201,7 +326,7 @@ class MonJeu(arcade.View):
             if self.lecteur_pas:
                 arcade.stop_sound(self.lecteur_pas)
                 self.lecteur_pas = None
-                
+
     def on_draw(self):
         self.clear()
         
@@ -234,11 +359,33 @@ class MonJeu(arcade.View):
         self.camera_gui.use()
         self.hud.dessiner(self.fleur)
 
+        if self.show_debug:
+            # Petit fond semi-transparent pour la lisibilité
+            arcade.draw_rect_filled(
+                arcade.LBWH(10, HAUTEUR - 110, 300, 100),
+                (0, 0, 0, 150)
+            )
+            
+            # Texte des coordonnées et FPS
+            debug_text = (
+                f"FPS: {int(self.fps)}\n"
+                f"X: {int(self.fleur.center_x)} px\n"
+                f"Y: {int(self.fleur.center_y)} px"
+            )
+            
+            arcade.draw_text(
+                debug_text,
+                20, HAUTEUR - 100,
+                arcade.color.GREEN,
+                12,
+                multiline=True,
+                width=300
+            )
+
 def main():
     window = arcade.Window(LARGEUR, HAUTEUR, TITRE)
-    game = MonJeu()
-    game.setup()
-    window.show_view(game)
+    intro = CinematiqueView()
+    window.show_view(intro)
     arcade.run()
 
 if __name__ == "__main__":

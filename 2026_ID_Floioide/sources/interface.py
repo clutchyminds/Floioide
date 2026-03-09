@@ -10,7 +10,7 @@ class HUD:
 
     def dessiner(self, joueur):
         # --- 1. BARRE DE VIE ---
-        arcade.draw_lrbt_rectangle_filled(20, 220, HAUTEUR - 40, HAUTEUR - 20, arcade.color.BLACK)
+        arcade.draw_rect_filled(arcade.LBWH(20, HAUTEUR - 40, 200, 20), arcade.color.BLACK)
         largeur_vie = (joueur.vie / 100) * 200
         if largeur_vie > 0:
             arcade.draw_lrbt_rectangle_filled(20, 20 + largeur_vie, HAUTEUR - 40, HAUTEUR - 20, self.barre_vie_couleur)
