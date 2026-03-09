@@ -158,28 +158,27 @@ class MonJeu(arcade.View):
         # 1. Chargement de la Map Tiled
         m_path = os.path.join(DOSSIER_MAPS, "map.tmj")
         try:
-            # On charge la map une seule fois
-            ma_map = arcade.tilemap.load_tilemap(m_path, scaling=2.0)
+            # IMPORTANT : On stocke dans self.tile_map pour que tout le monde y ait accès
+            self.tile_map = arcade.tilemap.load_tilemap(m_path, scaling=2.0)
             
-            # --- RÉCUPÉRATION DES CALQUES (Ordre de profondeur) ---
-            # Calque 2 (Physique) : Le seul qui bloque le joueur
-            self.tiroirs["murs"] = ma_map.sprite_lists.get("hit-box", arcade.SpriteList())
+            # --- RÉCUPÉRATION DES CALQUES ---
+            # Calque Physique
+            self.tiroirs["murs"] = self.tile_map.sprite_lists.get("hit-box", arcade.SpriteList())
             
-            # Calque 1 (Premier plan) : Devant tout le monde
-            self.tiroirs["front"] = ma_map.sprite_lists.get("front", arcade.SpriteList())
+            # Calque Premier plan
+            self.tiroirs["front"] = self.tile_map.sprite_lists.get("front", arcade.SpriteList())
             
-            # Calque 3 (Arrière-plan) : Derrière le joueur
-            self.tiroirs["background"] = ma_map.sprite_lists.get("back-ground", arcade.SpriteList())
+            # Calque Arrière-plan
+            self.tiroirs["background"] = self.tile_map.sprite_lists.get("back-ground", arcade.SpriteList())
             
-            # Calque 4 (Très loin) : Derrière tout
-            self.tiroirs["boss_test"] = ma_map.sprite_lists.get("boss-test", arcade.SpriteList())
+            # Calque Boss-test (Visuel seulement)
+            self.tiroirs["boss_test"] = self.tile_map.sprite_lists.get("boss-test", arcade.SpriteList())
 
             # --- Logique de Spawn ---
-            spawn_x, spawn_y = 2026, 1700  # Valeurs de secours
-            if "Positions" in ma_map.object_lists:
-                for obj in ma_map.object_lists["Positions"]:
+            spawn_x, spawn_y = 2026, 1700
+            if "Positions" in self.tile_map.object_lists:
+                for obj in self.tile_map.object_lists["Positions"]:
                     if obj.name == "spawn_plante":
-                        # Tiled utilise des coordonnées Y inversées par rapport à Arcade
                         spawn_x = obj.shape[0] * 2
                         spawn_y = obj.shape[1] * 2
                         break
@@ -189,11 +188,12 @@ class MonJeu(arcade.View):
         except Exception as e:
             print(f"Erreur chargement map : {e}")
             self.fleur = Joueur(500, 500)
+            # On crée une map vide pour éviter que le reste du code plante
+            self.tile_map = arcade.TileMap() 
 
         self.tiroirs["joueur"].append(self.fleur)
 
-        # 2. Moteur Physique (UNIQUEMENT avec le calque hit-box)
-        # Comme on ne met pas "background" ou "front" ici, ils seront traversables
+        # 2. Moteur Physique
         self.physique = arcade.PhysicsEnginePlatformer(
             self.fleur, 
             gravity_constant=0.5, 
@@ -202,6 +202,14 @@ class MonJeu(arcade.View):
 
         if not self.lecteur_musique:
             self.lecteur_musique = arcade.play_sound(self.musique_fond, volume=0.5, loop=True)
+
+        # 3. GESTION DU BOSS ET DÉCLENCHEUR
+        self.boss_apparu = False
+        
+        # On récupère le calque "test" qui sert de zone de déclenchement
+        # .get() permet d'éviter un plantage si le calque n'existe pas dans Tiled
+        self.tiroirs["declencheurs"] = self.tile_map.sprite_lists.get("test", arcade.SpriteList())
+
 
     def on_key_press(self, key, modifiers):
         self.inputs.on_key_press(key)
@@ -256,35 +264,29 @@ class MonJeu(arcade.View):
 
         # 5. PHYSIQUE ET ESCALADE
         if est_en_train_de_dasher:
-            # Mode Dash : déplacement simple sans gravité
+            # Mode Dash : mouvement simple à travers/contre les murs
             self.fleur.center_x += self.fleur.change_x
             if arcade.check_for_collision_with_list(self.fleur, self.tiroirs["murs"]):
                 self.fleur.center_x -= self.fleur.change_x
         else:
-            # Vérification de l'escalade (hitbox imaginaire +2px)
-            direction_voulue = self.inputs.droite - self.inputs.gauche
+            # Système d'escalade simplifié
             self.fleur.en_escalade = False 
+            if direction_horizontale != 0:
+                # On teste si un mur est présent juste à côté (2 pixels)
+                self.fleur.center_x += (direction_horizontale * 2)
+                contact_mur = arcade.check_for_collision_with_list(self.fleur, self.tiroirs["murs"])
+                self.fleur.center_x -= (direction_horizontale * 2) # On remet le joueur en place
+                
+                if contact_mur:
+                    self.fleur.en_escalade = True
 
-            # --- DANS ON_UPDATE (SECTION ESCALADE) ---
-        if direction_voulue != 0:
-            check_x = self.fleur.center_x + (direction_voulue * 2)
-            temp_sprite = arcade.Sprite()
-            temp_sprite.center_x = check_x
-            temp_sprite.center_y = self.fleur.center_y
-            
-            # CORRECTION : On accède directement à la propriété .hit_box
-            temp_sprite.hit_box = self.fleur.hit_box
-            
-            if arcade.check_for_collision_with_list(temp_sprite, self.tiroirs["murs"]):
-                self.fleur.en_escalade = True
-
-            # Application du mouvement selon l'état
+            # Application de la physique
             if self.fleur.en_escalade:
                 self.fleur.change_x = 0
                 self.fleur.change_y = VITESSE_MARCHE
                 self.fleur.center_y += self.fleur.change_y
             else:
-                # Physique normale (gravité, saut) uniquement si on n'escalade pas
+                # Gravité et sauts normaux (seulement si on n'escalade pas)
                 self.physique.update()
 
         # 6. ANIMATIONS ET CAMÉRA
@@ -307,8 +309,8 @@ class MonJeu(arcade.View):
             self.tiroirs["pluie"].append(Goutte(self.fleur.center_x + random.randint(-600, 600), self.fleur.center_y + 500))
 
         self.tiroirs["pluie"].update()
-        
-        # Hydratation
+
+        # Hydratation (Collision pluie)
         gouttes_touchees = arcade.check_for_collision_with_list(self.fleur, self.tiroirs["pluie"])
         for goutte in gouttes_touchees:
             goutte.remove_from_sprite_lists()
@@ -326,6 +328,26 @@ class MonJeu(arcade.View):
             if self.lecteur_pas:
                 arcade.stop_sound(self.lecteur_pas)
                 self.lecteur_pas = None
+
+        # --- LOGIQUE DÉCLENCHEMENT BOSS ---
+        if not self.boss_apparu:
+            zones_touchees = arcade.check_for_collision_with_list(self.fleur, self.tiroirs["declencheurs"])
+            if zones_touchees:
+                le_boss = Boss(502, 2550)
+                le_boss.cible = self.fleur
+                self.tiroirs["ennemis"].append(le_boss)
+                self.boss_apparu = True
+                # Optionnel : on enlève la tuile pour ne pas redéclencher
+                for z in zones_touchees:
+                    z.remove_from_sprite_lists()
+
+        # --- DÉGATS DU BOSS ---
+        boss_hit = arcade.check_for_collision_with_list(self.fleur, self.tiroirs["ennemis"])
+        for b in boss_hit:
+            if isinstance(b, Boss):
+                self.fleur.vie -= 0.5 # Dégâts continus si on le touche
+
+
 
     def on_draw(self):
         self.clear()

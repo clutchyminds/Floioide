@@ -17,15 +17,23 @@ class EntiteAnimee(arcade.Sprite):
         self.timer_dash = 0  # Temps restant avant le prochain dash
 
     def update_animation(self, delta_time=1/60):
-        if abs(self.change_y) < 0.1:
-            self.en_escalade = False
         if not self.textures:
             return
+            
         self.temps_ecoule += delta_time
         if self.temps_ecoule > self.vitesse_animation:
             self.temps_ecoule = 0
             self.frame_actuelle = (self.frame_actuelle + 1) % len(self.textures)
-            self.texture = self.textures[self.frame_actuelle]
+            
+            # 1. On récupère la texture normale
+            nouvelle_texture = self.textures[self.frame_actuelle]
+            
+            # 2. On applique le flip si nécessaire
+            # hasattr vérifie si la variable existe pour éviter les bugs avec PetitMob
+            if hasattr(self, "flipped_horizontally") and self.flipped_horizontally:
+                self.texture = nouvelle_texture.flip_left_right()
+            else:
+                self.texture = nouvelle_texture
 
 class Joueur(EntiteAnimee):
     def __init__(self, x, y):
@@ -98,18 +106,69 @@ class Joueur(EntiteAnimee):
         else:
             self.en_escalade = False
 
+
 class Boss(EntiteAnimee):
     def __init__(self, x, y):
         super().__init__(x, y, taille=2.0)
-        # On cherche dans data/boss/test comme indiqué dans tes dossiers
-        d = os.path.join(DOSSIER_DATA, "boss", "test")
-        if os.path.exists(d):
-            fichiers = sorted([f for f in os.listdir(d) if f.endswith(".png")])
-            for f in fichiers:
-                self.textures.append(arcade.load_texture(os.path.join(d, f)))
+        self.textures_attaque = []
+        self.textures_pause = []
         
-        # Texture de secours si le dossier est vide
-        self.texture = self.textures[0] if self.textures else arcade.make_soft_square_texture(100, (255, 0, 0))
+        d = os.path.join(DOSSIER_DATA, "boss", "test")
+
+        if os.path.exists(d):
+            # On récupère tous les fichiers du dossier
+            tous_les_fichiers = sorted(os.listdir(d))
+            
+            for f in tous_les_fichiers:
+                if f.startswith("attaque") and f.endswith(".png"):
+                    self.textures_attaque.append(arcade.load_texture(os.path.join(d, f)))
+                elif f.startswith("pause") and f.endswith(".png"):
+                    self.textures_pause.append(arcade.load_texture(os.path.join(d, f)))
+
+        # Attribution de la texture initiale
+        if self.textures_attaque:
+            self.textures = self.textures_attaque
+            self.texture = self.textures[0]
+        else:
+            # Carré de secours pour debugger visuellement
+            print(f"ALERTE : Aucune image trouvée dans {d}")
+            self.texture = arcade.make_soft_square_texture(150, arcade.color.VIOLET)
+
+        self.etat = "ATTAQUE"
+        self.timer_pause = 0
+        self.cible = None
+
+    def update_animation(self, delta_time=1/60):
+        self.temps_ecoule += delta_time
+        
+        if self.etat == "ATTAQUE":
+            if self.temps_ecoule > self.vitesse_animation:
+                self.temps_ecoule = 0
+                self.frame_actuelle += 1
+                if self.frame_actuelle >= len(self.textures_attaque):
+                    # Fin d'attaque -> Passage en pause
+                    self.etat = "PAUSE"
+                    self.frame_actuelle = 0
+                    self.timer_pause = 0
+                else:
+                    self.texture = self.textures_attaque[self.frame_actuelle]
+        
+        elif self.etat == "PAUSE":
+            self.timer_pause += delta_time
+            if self.temps_ecoule > self.vitesse_animation:
+                self.temps_ecoule = 0
+                self.frame_actuelle = (self.frame_actuelle + 1) % len(self.textures_pause)
+                self.texture = self.textures_pause[self.frame_actuelle]
+            
+            if self.timer_pause >= 5.0:
+                self.etat = "ATTAQUE"
+                self.frame_actuelle = 0
+
+        # Toujours regarder le joueur
+        if self.cible:
+            self.flipped_horizontally = self.cible.center_x > self.center_x
+            if self.flipped_horizontally:
+                self.texture = self.texture.flip_left_right()
 
 class PetitMob(EntiteAnimee):
     def __init__(self, x, y):
