@@ -171,8 +171,8 @@ class MonJeu(arcade.View):
             # Calque Arrière-plan
             self.tiroirs["background"] = self.tile_map.sprite_lists.get("back-ground", arcade.SpriteList())
             
-            # Calque Boss-test (Visuel seulement)
-            self.tiroirs["boss_test"] = self.tile_map.sprite_lists.get("boss-test", arcade.SpriteList())
+            # Calque test (Visuel seulement)
+            self.tiroirs["test"] = self.tile_map.sprite_lists.get("boss-test", arcade.SpriteList())
 
             # --- Logique de Spawn ---
             spawn_x, spawn_y = 2026, 1700
@@ -329,23 +329,32 @@ class MonJeu(arcade.View):
                 arcade.stop_sound(self.lecteur_pas)
                 self.lecteur_pas = None
 
+        self.tiroirs["ennemis"].update_animation(delta_time)
+
         # --- LOGIQUE DÉCLENCHEMENT BOSS ---
+        # On ne vérifie la collision QUE si le boss n'est pas déjà apparu
         if not self.boss_apparu:
             zones_touchees = arcade.check_for_collision_with_list(self.fleur, self.tiroirs["declencheurs"])
             if zones_touchees:
-                le_boss = Boss(502, 2550)
+                # On crée UN SEUL boss aux coordonnées souhaitées
+                le_boss = Boss(502, 2700) 
                 le_boss.cible = self.fleur
                 self.tiroirs["ennemis"].append(le_boss)
+                
+                # On verrouille pour ne plus jamais rentrer ici
                 self.boss_apparu = True
-                # Optionnel : on enlève la tuile pour ne pas redéclencher
+                
+                # On supprime les tuiles de déclenchement pour gagner en performance
                 for z in zones_touchees:
                     z.remove_from_sprite_lists()
 
         # --- DÉGATS DU BOSS ---
-        boss_hit = arcade.check_for_collision_with_list(self.fleur, self.tiroirs["ennemis"])
-        for b in boss_hit:
-            if isinstance(b, Boss):
-                self.fleur.vie -= 0.5 # Dégâts continus si on le touche
+        # On ne vérifie les dégâts que si des ennemis existent
+        if len(self.tiroirs["ennemis"]) > 0:
+            boss_hit = arcade.check_for_collision_with_list(self.fleur, self.tiroirs["ennemis"])
+            for b in boss_hit:
+                if isinstance(b, Boss):
+                    self.fleur.vie -= 0.5 # Dégâts continus
 
 
 

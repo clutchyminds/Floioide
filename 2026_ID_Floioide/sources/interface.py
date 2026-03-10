@@ -1,3 +1,5 @@
+import os
+from sources.constantes import DOSSIER_DATA
 import arcade
 import math
 from sources.constantes import LARGEUR, HAUTEUR
@@ -7,13 +9,41 @@ class HUD:
         self.barre_vie_couleur = arcade.color.RED
         self.eau_couleur = arcade.color.AZURE_MIST
         self.dash_couleur = arcade.color.GOLD
-
+        chemin_vies = os.path.join(DOSSIER_DATA, "player", "vies")
+        self.tex_plein = arcade.load_texture(os.path.join(chemin_vies, "vie1.png"))
+        self.tex_demi = arcade.load_texture(os.path.join(chemin_vies, "vie0.5.png"))
+        self.tex_vide = arcade.load_texture(os.path.join(chemin_vies, "vie0.png"))
+        
     def dessiner(self, joueur):
-        # --- 1. BARRE DE VIE ---
-        arcade.draw_rect_filled(arcade.LBWH(20, HAUTEUR - 40, 200, 20), arcade.color.BLACK)
-        largeur_vie = (joueur.vie / 100) * 200
-        if largeur_vie > 0:
-            arcade.draw_lrbt_rectangle_filled(20, 20 + largeur_vie, HAUTEUR - 40, HAUTEUR - 20, self.barre_vie_couleur)
+        # --- AFFICHAGE DES 10 CŒURS ---
+        x_depart = 40
+        y_position = HAUTEUR - 40
+        espacement = 35 
+        
+        # On crée une liste de sprites temporaire
+        liste_coeurs = arcade.SpriteList()
+        
+        for i in range(10):
+            seuil_vie = (i * 2) + 1
+            x_actuel = x_depart + (i * espacement)
+            
+            if joueur.vie >= seuil_vie + 1:
+                tex = self.tex_plein
+            elif joueur.vie == seuil_vie:
+                tex = self.tex_demi
+            else:
+                tex = self.tex_vide
+
+            # On crée le sprite
+            coeur = arcade.Sprite(tex, scale=0.07)
+            coeur.center_x = x_actuel
+            coeur.center_y = y_position
+            
+            # On l'ajoute à la liste au lieu de le dessiner direct
+            liste_coeurs.append(coeur)
+
+        # On dessine toute la liste d'un coup
+        liste_coeurs.draw()
 
         # --- 2. JAUGE D'EAU (Cercle) ---
         centre_eau_x, centre_eau_y = 60, HAUTEUR - 100

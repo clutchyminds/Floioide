@@ -13,7 +13,7 @@ class EntiteAnimee(arcade.Sprite):
         self.textures = []
         self.frame_actuelle = 0
         self.temps_ecoule = 0
-        self.vitesse_animation = 0.15
+        self.vitesse_animation = 0.3
         self.timer_dash = 0  # Temps restant avant le prochain dash
 
     def update_animation(self, delta_time=1/60):
@@ -38,11 +38,12 @@ class EntiteAnimee(arcade.Sprite):
 class Joueur(EntiteAnimee):
     def __init__(self, x, y):
         super().__init__(x, y, taille=0.4)
-        self.vie = 100
         self.eau = 100
         self.en_escalade = False
         self.en_dash = False
 
+        self.vie_max = 20
+        self.vie = 20
         
         # 1. Chargement de l'image de base (Idle)
         # Chemin selon l'image : data/player/player.png
@@ -109,66 +110,66 @@ class Joueur(EntiteAnimee):
 
 class Boss(EntiteAnimee):
     def __init__(self, x, y):
-        super().__init__(x, y, taille=2.0)
+        # On définit la taille désirée une seule fois ici (ex: 4.0)
+        self.taille_fixe = 4.0 
+        super().__init__(x, y, taille=self.taille_fixe)
+        
         self.textures_attaque = []
         self.textures_pause = []
         
         d = os.path.join(DOSSIER_DATA, "boss", "test")
-
+        
         if os.path.exists(d):
-            # On récupère tous les fichiers du dossier
-            tous_les_fichiers = sorted(os.listdir(d))
-            
-            for f in tous_les_fichiers:
+            fichiers = sorted(os.listdir(d))
+            for f in fichiers:
                 if f.startswith("attaque") and f.endswith(".png"):
                     self.textures_attaque.append(arcade.load_texture(os.path.join(d, f)))
                 elif f.startswith("pause") and f.endswith(".png"):
                     self.textures_pause.append(arcade.load_texture(os.path.join(d, f)))
 
-        # Attribution de la texture initiale
-        if self.textures_attaque:
-            self.textures = self.textures_attaque
-            self.texture = self.textures[0]
-        else:
-            # Carré de secours pour debugger visuellement
-            print(f"ALERTE : Aucune image trouvée dans {d}")
-            self.texture = arcade.make_soft_square_texture(150, arcade.color.VIOLET)
-
         self.etat = "ATTAQUE"
+        self.vitesse_animation = 0.12
         self.timer_pause = 0
-        self.cible = None
+        self.frame_actuelle = 0
+        self.cible = None 
+        
+        if self.textures_attaque:
+            self.texture = self.textures_attaque[0]
 
     def update_animation(self, delta_time=1/60):
         self.temps_ecoule += delta_time
         
-        if self.etat == "ATTAQUE":
+        # --- Gestion des textures ---
+        if self.etat == "ATTAQUE" and self.textures_attaque:
             if self.temps_ecoule > self.vitesse_animation:
                 self.temps_ecoule = 0
-                self.frame_actuelle += 1
-                if self.frame_actuelle >= len(self.textures_attaque):
-                    # Fin d'attaque -> Passage en pause
+                self.frame_actuelle = (self.frame_actuelle + 1) % len(self.textures_attaque)
+                self.texture = self.textures_attaque[self.frame_actuelle]
+                if self.frame_actuelle == 0:
                     self.etat = "PAUSE"
-                    self.frame_actuelle = 0
                     self.timer_pause = 0
-                else:
-                    self.texture = self.textures_attaque[self.frame_actuelle]
         
-        elif self.etat == "PAUSE":
+        elif self.etat == "PAUSE" and self.textures_pause:
             self.timer_pause += delta_time
-            if self.temps_ecoule > self.vitesse_animation:
+            if self.temps_ecoule > 0.3:
                 self.temps_ecoule = 0
                 self.frame_actuelle = (self.frame_actuelle + 1) % len(self.textures_pause)
                 self.texture = self.textures_pause[self.frame_actuelle]
-            
             if self.timer_pause >= 5.0:
                 self.etat = "ATTAQUE"
-                self.frame_actuelle = 0
 
-        # Toujours regarder le joueur
+        # --- GESTION DU REGARD (SANS TÊTE EN BAS) ---
         if self.cible:
-            self.flipped_horizontally = self.cible.center_x > self.center_x
-            if self.flipped_horizontally:
-                self.texture = self.texture.flip_left_right()
+            # On utilise self.taille_fixe pour rester cohérent
+            if self.cible.center_x < self.center_x:
+                # Si tes images regardent à GAUCHE par défaut :
+                self.width = abs(self.width)  # Largeur normale
+            else:
+                # On force la largeur en négatif pour le miroir horizontal uniquement
+                self.width = -abs(self.width) 
+            
+            # Note : On ne touche JAMAIS à self.height ou self.scale ici 
+            # pour éviter que le boss ne se retrouve la tête en bas.
 
 class PetitMob(EntiteAnimee):
     def __init__(self, x, y):
