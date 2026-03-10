@@ -2,10 +2,117 @@ import arcade
 import random
 import os
 from sources.constantes import *
-from sources.entities import Joueur, Boss, PetitMob
+from sources.entities import Joueur, Boss, PetitMob, Goutte
 from sources.inputs import InputHandler
 from sources.interface import HUD
 from sources.logic import gerer_collisions
+
+
+class CinematiqueView(arcade.View):
+    def __init__(self):
+        super().__init__()
+        self.scene_actuelle = 1
+        self.timer_animation = 0
+        chemin_musique = os.path.join(DOSSIER_DATA, "sounds", "Popi.mp3")
+        self.musique_fond = arcade.load_sound(chemin_musique)
+        self.lecteur_musique = arcade.play_sound(self.musique_fond, volume=0.5, loop=True)
+
+
+        # Liste des 12 phrases pour l'histoire
+        self.textes = [
+            "texte 1",
+            "texte 2",
+            "texte 3",
+            "texte 4",
+            "texte 5",
+            "texte 6",
+            "texte 7",
+            "texte 8",
+            "texte 9",
+            "texte 10",
+            "texte 11",
+            "texte 12"
+        ]
+        
+        self.texte_affiche = ""
+        self.index_lettre = 0
+        self.timer_texte = 0
+        self.charger_scene()
+
+    def charger_scene(self):
+        # construction du chemin vers les images 
+        chemin = os.path.join(DOSSIER_DATA, "intro")
+        nom1 = f"image {self.scene_actuelle}.1.PNG"
+        nom2 = f"image {self.scene_actuelle}.2.PNG"
+        
+        self.img1 = arcade.load_texture(os.path.join(chemin, nom1))
+        self.img2 = arcade.load_texture(os.path.join(chemin, nom2))
+        self.texture_active = self.img1
+        
+        self.texte_affiche = ""
+        self.index_lettre = 0
+
+    def on_update(self, delta_time):
+        # Animation : On alterne entre l'image .1 et .2 toutes les 0.5s
+        self.timer_animation += delta_time
+        if self.timer_animation > 0.5:
+            self.texture_active = self.img2 if self.texture_active == self.img1 else self.img1
+            self.timer_animation = 0
+
+        # Effet d'écriture automatique
+        if self.index_lettre < len(self.textes[self.scene_actuelle - 1]):
+            self.timer_texte += delta_time
+            if self.timer_texte > 0.04:
+                self.index_lettre += 1
+                self.texte_affiche = self.textes[self.scene_actuelle - 1][:self.index_lettre]
+                self.timer_texte = 0
+
+    def on_draw(self):
+        self.clear()
+        
+        # utilise draw_lrbt_rectangle_filled avec la texture si possible
+        # sinon dessine la texture via les coordonnées simples
+        
+        # Dans Arcade 3.0, pour dessiner une texture sur tout l'écran sans créer d'objet Rect :
+        arcade.draw_texture_rect(
+            self.texture_active, 
+            arcade.LBWH(0, 0, LARGEUR, HAUTEUR) # LBWH = Left, Bottom, Width, Height
+        )
+        
+        # Bandeau de texte noir en bas
+        # Ici on utilise directement LBWH qui est beaucoup plus simple que Rect
+        arcade.draw_rect_filled(
+            arcade.LBWH(0, 0, LARGEUR, 150),
+            arcade.color.BLACK_BEAN
+        )
+        
+        # Affichage du texte
+        arcade.draw_text(
+            self.texte_affiche, 
+            50, 80, 
+            arcade.color.WHITE, 
+            20, 
+            width=LARGEUR-100, 
+            multiline=True
+        )
+        
+        arcade.draw_text("Appuyez sur [ENTRÉE] pour continuer", LARGEUR - 350, 20, arcade.color.GRAY, 10)
+
+    def on_key_press(self, key, modifiers):
+        if key == arcade.key.ENTER:
+            if self.scene_actuelle < 12:
+                self.scene_actuelle += 1
+                self.charger_scene()
+            else:
+                # Arrêter la musique de l'intro
+                arcade.stop_sound(self.lecteur_musique)
+                
+                # Lancer le jeu
+                game_view = MonJeu()
+                game_view.setup()
+                self.window.show_view(game_view)
+
+
 
 class MonJeu(arcade.View):
     def __init__(self):
@@ -13,11 +120,14 @@ class MonJeu(arcade.View):
         
         # 1. Organisation des listes d'objets (SpriteLists)
         self.tiroirs = {
-            "murs": arcade.SpriteList(),
-            "decor": arcade.SpriteList(),
+            "murs": arcade.SpriteList(),      # Sera ton "hit-box"
+            "front": arcade.SpriteList(),
+            "background": arcade.SpriteList(),
+            "boss_test": arcade.SpriteList(),
             "ennemis": arcade.SpriteList(),
             "tirs": arcade.SpriteList(),
-            "joueur": arcade.SpriteList()
+            "joueur": arcade.SpriteList(),
+            "pluie": arcade.SpriteList()
         }
         
         # 2. Initialisation des outils
@@ -30,25 +140,47 @@ class MonJeu(arcade.View):
         
         self.temps_depuis_dernier_mob = 0
 
+        chemin_musique = os.path.join(DOSSIER_DATA, "sounds", "Popi.mp3")
+        self.musique_fond = arcade.load_sound(chemin_musique)
+
+        self.lecteur_musique = None
+
+        self.son_saut = arcade.load_sound(os.path.join(DOSSIER_DATA, "sounds", "saut.wav"))
+        self.son_pas = arcade.load_sound(os.path.join(DOSSIER_DATA, "sounds", "deplacement.ogg"))
+        self.lecteur_pas = None 
+
+        self.show_debug = False
+        self.fps = 0
+
     def setup(self):
         """ Configuration initiale du niveau et du spawn """
         
         # 1. Chargement de la Map Tiled
         m_path = os.path.join(DOSSIER_MAPS, "map.tmj")
         try:
-            ma_map = arcade.tilemap.load_tilemap(m_path, scaling=2)
-            self.tiroirs["murs"] = ma_map.sprite_lists.get("hit-box", arcade.SpriteList())
-            self.tiroirs["decor"] = ma_map.sprite_lists.get("back-ground", arcade.SpriteList())
+            # IMPORTANT : On stocke dans self.tile_map pour que tout le monde y ait accès
+            self.tile_map = arcade.tilemap.load_tilemap(m_path, scaling=2.0)
             
-            # --- Logique de Spawn via Tiled ---
-            spawn_x, spawn_y = 300, 300 # Valeurs de secours
+            # --- RÉCUPÉRATION DES CALQUES ---
+            # Calque Physique
+            self.tiroirs["murs"] = self.tile_map.sprite_lists.get("hit-box", arcade.SpriteList())
             
-            if "Positions" in ma_map.object_lists:
-                for obj in ma_map.object_lists["Positions"]:
+            # Calque Premier plan
+            self.tiroirs["front"] = self.tile_map.sprite_lists.get("front", arcade.SpriteList())
+            
+            # Calque Arrière-plan
+            self.tiroirs["background"] = self.tile_map.sprite_lists.get("back-ground", arcade.SpriteList())
+            
+            # Calque Boss-test (Visuel seulement)
+            self.tiroirs["boss_test"] = self.tile_map.sprite_lists.get("boss-test", arcade.SpriteList())
+
+            # --- Logique de Spawn ---
+            spawn_x, spawn_y = 2026, 1700
+            if "Positions" in self.tile_map.object_lists:
+                for obj in self.tile_map.object_lists["Positions"]:
                     if obj.name == "spawn_plante":
-                        spawn_x = obj.shape[0] * 2  # Multiplié par le scaling
+                        spawn_x = obj.shape[0] * 2
                         spawn_y = obj.shape[1] * 2
-                        print(f"Spawn chargé depuis Tiled : {spawn_x}, {spawn_y}")
                         break
             
             self.fleur = Joueur(spawn_x, spawn_y)
@@ -56,58 +188,115 @@ class MonJeu(arcade.View):
         except Exception as e:
             print(f"Erreur chargement map : {e}")
             self.fleur = Joueur(500, 500)
+            # On crée une map vide pour éviter que le reste du code plante
+            self.tile_map = arcade.TileMap() 
 
         self.tiroirs["joueur"].append(self.fleur)
 
-        # 2. Moteur Physique (Platformer)
+        # 2. Moteur Physique
         self.physique = arcade.PhysicsEnginePlatformer(
             self.fleur, 
             gravity_constant=0.5, 
             walls=self.tiroirs["murs"]
         )
 
+        if not self.lecteur_musique:
+            self.lecteur_musique = arcade.play_sound(self.musique_fond, volume=0.5, loop=True)
+
+        # 3. GESTION DU BOSS ET DÉCLENCHEUR
+        self.boss_apparu = False
+        
+        # On récupère le calque "test" qui sert de zone de déclenchement
+        # .get() permet d'éviter un plantage si le calque n'existe pas dans Tiled
+        self.tiroirs["declencheurs"] = self.tile_map.sprite_lists.get("test", arcade.SpriteList())
+
+
     def on_key_press(self, key, modifiers):
         self.inputs.on_key_press(key)
         # Saut simple (uniquement si au sol)
         if key == arcade.key.SPACE and self.physique.can_jump():
             self.fleur.change_y = VITESSE_SAUT
+        if key == arcade.key.SPACE or key == arcade.key.Z:
+            if self.physique.can_jump():
+                arcade.play_sound(self.son_saut, volume=0.3)
+        if key == arcade.key.F3:
+            self.show_debug = not self.show_debug
+
 
     def on_key_release(self, key, modifiers):
         self.inputs.on_key_release(key)
 
     def on_update(self, delta_time):
-        # 1. Gestion du Dash et de la vitesse
-        self.fleur.en_dash = False
+        # 1. Calcul des FPS pour le menu F3
+        if delta_time > 0:
+            self.fps = 1 / delta_time
+
+        # 2. GESTION DU DASH (Timers et États)
+        if self.fleur.timer_dash > 0:
+            self.fleur.timer_dash -= delta_time
+            
+        est_en_train_de_dasher = self.fleur.timer_dash > 6.8 
+        self.fleur.en_dash = est_en_train_de_dasher
+
+        # 3. CALCUL DES MOUVEMENTS
         vitesse = VITESSE_MARCHE
+        direction_horizontale = self.inputs.droite - self.inputs.gauche
         
-        if self.inputs.shift and self.fleur.eau > 0:
+        # Déclenchement du dash
+        if self.inputs.shift and self.fleur.timer_dash <= 0 and self.fleur.eau >= 10:
+            self.fleur.eau -= 10
+            self.fleur.timer_dash = 7.0
+            self.fleur.change_y = 0 
+
+        if est_en_train_de_dasher:
             vitesse = VITESSE_DASH
-            self.fleur.en_dash = True
-            self.fleur.eau = max(0, self.fleur.eau - 0.3) # Consomme de l'eau
+            self.fleur.change_y = 0 
+            if direction_horizontale == 0:
+                direction_horizontale = -1 if self.fleur.flipped_horizontally else 1
         
-        self.fleur.change_x = (self.inputs.droite - self.inputs.gauche) * vitesse
+        self.fleur.change_x = direction_horizontale * vitesse
 
-        # 2. Escalade AUTOMATIQUE
-        # On vérifie si la plante touche un mur
-        murs_touches = arcade.check_for_collision_with_list(self.fleur, self.tiroirs["murs"])
-        
-        # Si contact mur + appui vers le mur (Q ou D)
-        if murs_touches and (self.inputs.droite or self.inputs.gauche):
-            self.fleur.en_escalade = True
-            self.fleur.change_y = 4      # Vitesse de montée
-            self.fleur.center_y += 4    # Force le déplacement vers le haut
+        # 4. GESTION DU SENS DU SPRITE (Le "Flip")
+        if self.fleur.change_x < 0:
+            self.fleur.flipped_horizontally = True
+        elif self.fleur.change_x > 0:
+            self.fleur.flipped_horizontally = False
+
+        # 5. PHYSIQUE ET ESCALADE
+        if est_en_train_de_dasher:
+            # Mode Dash : mouvement simple à travers/contre les murs
+            self.fleur.center_x += self.fleur.change_x
+            if arcade.check_for_collision_with_list(self.fleur, self.tiroirs["murs"]):
+                self.fleur.center_x -= self.fleur.change_x
         else:
-            self.fleur.en_escalade = False
-            self.physique.update()      # Physique normale (gravité)
+            # Système d'escalade simplifié
+            self.fleur.en_escalade = False 
+            if direction_horizontale != 0:
+                # On teste si un mur est présent juste à côté (2 pixels)
+                self.fleur.center_x += (direction_horizontale * 2)
+                contact_mur = arcade.check_for_collision_with_list(self.fleur, self.tiroirs["murs"])
+                self.fleur.center_x -= (direction_horizontale * 2) # On remet le joueur en place
+                
+                if contact_mur:
+                    self.fleur.en_escalade = True
 
-        # 3. Animations et Caméra
+            # Application de la physique
+            if self.fleur.en_escalade:
+                self.fleur.change_x = 0
+                self.fleur.change_y = VITESSE_MARCHE
+                self.fleur.center_y += self.fleur.change_y
+            else:
+                # Gravité et sauts normaux (seulement si on n'escalade pas)
+                self.physique.update()
+
+        # 6. ANIMATIONS ET CAMÉRA
         self.fleur.update_animation(delta_time)
         self.camera_jeu.position = (self.fleur.center_x, self.fleur.center_y)
 
-        # 4. Collisions (Combat)
+        # 7. LOGIQUE DE JEU (Collisions, Pluie, Ennemis)
         gerer_collisions(self.tiroirs["tirs"], self.tiroirs["ennemis"])
         
-        # 5. Apparition aléatoire d'ennemis
+        # Apparition des ennemis
         self.temps_depuis_dernier_mob += delta_time
         if self.temps_depuis_dernier_mob > 5.0:
             offset = 400 if random.random() > 0.5 else -400
@@ -115,23 +304,110 @@ class MonJeu(arcade.View):
             self.tiroirs["ennemis"].append(ennemi)
             self.temps_depuis_dernier_mob = 0
 
+        # Système de pluie
+        if random.random() < 0.1: 
+            self.tiroirs["pluie"].append(Goutte(self.fleur.center_x + random.randint(-600, 600), self.fleur.center_y + 500))
+
+        self.tiroirs["pluie"].update()
+
+        # Hydratation (Collision pluie)
+        gouttes_touchees = arcade.check_for_collision_with_list(self.fleur, self.tiroirs["pluie"])
+        for goutte in gouttes_touchees:
+            goutte.remove_from_sprite_lists()
+            self.fleur.eau = min(100, self.fleur.eau + 2)
+
+        for goutte in self.tiroirs["pluie"]:
+            if goutte.top < self.fleur.center_y - 400:
+                goutte.remove_from_sprite_lists()
+
+        # 8. SONS DE PAS
+        if abs(self.fleur.change_x) > 0.1 and self.physique.can_jump() and not est_en_train_de_dasher:
+            if not self.lecteur_pas:
+                self.lecteur_pas = arcade.play_sound(self.son_pas, volume=0.1, loop=True)
+        else:
+            if self.lecteur_pas:
+                arcade.stop_sound(self.lecteur_pas)
+                self.lecteur_pas = None
+
+        # --- LOGIQUE DÉCLENCHEMENT BOSS ---
+        if not self.boss_apparu:
+            zones_touchees = arcade.check_for_collision_with_list(self.fleur, self.tiroirs["declencheurs"])
+            if zones_touchees:
+                le_boss = Boss(502, 2550)
+                le_boss.cible = self.fleur
+                self.tiroirs["ennemis"].append(le_boss)
+                self.boss_apparu = True
+                # Optionnel : on enlève la tuile pour ne pas redéclencher
+                for z in zones_touchees:
+                    z.remove_from_sprite_lists()
+
+        # --- DÉGATS DU BOSS ---
+        boss_hit = arcade.check_for_collision_with_list(self.fleur, self.tiroirs["ennemis"])
+        for b in boss_hit:
+            if isinstance(b, Boss):
+                self.fleur.vie -= 0.5 # Dégâts continus si on le touche
+
+
+
     def on_draw(self):
         self.clear()
         
-        # Dessin du jeu (Caméra qui suit la plante)
+        # 1. On active la caméra du jeu
         self.camera_jeu.use()
-        for liste in self.tiroirs.values():
-            liste.draw()
         
-        # Dessin de l'interface (Caméra fixe)
+        # 2. On dessine les calques dans l'ordre (Arrière vers Avant)
+        # 4ème plan
+        if "boss_test" in self.tiroirs:
+            self.tiroirs["boss_test"].draw()
+            
+        # 3ème plan
+        if "background" in self.tiroirs:
+            self.tiroirs["background"].draw()
+            
+        # 2ème plan (Le sol / hit-box)
+        self.tiroirs["murs"].draw()
+        
+        # Les entités
+        self.tiroirs["ennemis"].draw()
+        self.tiroirs["joueur"].draw() # Dessine la plante via la liste (plus fiable)
+        self.tiroirs["pluie"].draw()
+        self.tiroirs["tirs"].draw()
+        
+        # 1er plan (Devant tout le monde)
+        if "front" in self.tiroirs:
+            self.tiroirs["front"].draw()
+
+        # 3. On active la caméra de l'interface (HUD)
         self.camera_gui.use()
         self.hud.dessiner(self.fleur)
 
+        if self.show_debug:
+            # Petit fond semi-transparent pour la lisibilité
+            arcade.draw_rect_filled(
+                arcade.LBWH(10, HAUTEUR - 110, 300, 100),
+                (0, 0, 0, 150)
+            )
+            
+            # Texte des coordonnées et FPS
+            debug_text = (
+                f"FPS: {int(self.fps)}\n"
+                f"X: {int(self.fleur.center_x)} px\n"
+                f"Y: {int(self.fleur.center_y)} px"
+            )
+            
+            arcade.draw_text(
+                debug_text,
+                20, HAUTEUR - 100,
+                arcade.color.GREEN,
+                12,
+                multiline=True,
+                width=300
+            )
+
 def main():
     window = arcade.Window(LARGEUR, HAUTEUR, TITRE)
-    game = MonJeu()
-    game.setup()
-    window.show_view(game)
+    intro = CinematiqueView()
+    window.show_view(intro)
     arcade.run()
 
 if __name__ == "__main__":
