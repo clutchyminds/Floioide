@@ -13,7 +13,7 @@ class EntiteAnimee(arcade.Sprite):
         self.textures = []
         self.frame_actuelle = 0
         self.temps_ecoule = 0
-        self.vitesse_animation = 0.3
+        self.vitesse_animation = 0.15
         self.timer_dash = 0  # Temps restant avant le prochain dash
 
     def update_animation(self, delta_time=1/60):
@@ -44,7 +44,7 @@ class Joueur(EntiteAnimee):
 
         self.vie_max = 20
         self.vie = 20
-        
+            
         # 1. Chargement de l'image de base (Idle)
         # Chemin selon l'image : data/player/player.png
         self.tex_idle = arcade.load_texture(os.path.join(DOSSIER_DATA, "player", "player.png"))        
@@ -70,32 +70,65 @@ class Joueur(EntiteAnimee):
 
         self.texture = self.tex_idle
 
-    def update_animation(self, delta_time=1/60):
-        nouvelle_liste = []
-
-        if self.en_escalade:
-            nouvelle_liste = self.anims_escalade
-        elif self.en_dash:
-            nouvelle_liste = self.anims_dash
-        elif abs(self.change_x) > 0.1:
-            nouvelle_liste = self.anims_marche
-
-        if nouvelle_liste:
-            self.textures = nouvelle_liste
-            super().update_animation(delta_time)
-        else:
-            self.texture = self.tex_idle
-
-        if self.temps_ecoule > self.vitesse_animation:
-            self.temps_ecoule = 0
-            self.frame_actuelle = (self.frame_actuelle + 1) % len(self.textures)
-            
-            # On récupère la texture et on lui applique le flip
-            tex = self.textures[self.frame_actuelle]
-            if hasattr(self, "flipped_horizontally") and self.flipped_horizontally:
-                self.texture = tex.flip_left_right() # Retourne l'image
+        self.etat = "IDLE"
+        self.textures_attaque = []
+        chemin_attaque = os.path.join(DOSSIER_DATA, "player", "attaque")
+        
+        for i in range(16):
+            nom_fichier = f"frame_{i:02d}_delay-0.1s.png"
+            full_path = os.path.join(chemin_attaque, nom_fichier)
+            if os.path.exists(full_path):
+                self.textures_attaque.append(arcade.load_texture(full_path))
             else:
-                self.texture = tex
+                print(f"Attention : fichier manquant {full_path}")
+
+    def update_animation(self, delta_time=1/60):
+        # --- 1. SÉCURITÉ : Si aucune texture n'est chargée, on arrête ---
+        if self.etat == "ATTAQUE":
+            textures_a_utiliser = self.textures_attaque
+        elif self.en_dash:
+            textures_a_utiliser = self.anims_dash
+        elif self.en_escalade:
+            textures_a_utiliser = self.anims_escalade
+        elif abs(self.change_x) > 0.1:
+            textures_a_utiliser = self.anims_marche
+        else:
+            # On utilise une liste contenant juste l'image IDLE
+            textures_a_utiliser = [self.tex_idle]
+
+        if not textures_a_utiliser:
+            return
+
+        # --- 2. GESTION DU TIMER ---
+        self.temps_ecoule += delta_time
+        vitesse = 0.05 if self.etat == "ATTAQUE" else self.vitesse_animation
+
+        if self.temps_ecoule > vitesse:
+            self.temps_ecoule = 0
+            self.frame_actuelle += 1
+
+            # --- 3. LOGIQUE SELON L'ÉTAT ---
+            if self.etat == "ATTAQUE":
+                if self.frame_actuelle >= len(self.textures_attaque):
+                    self.frame_actuelle = 0
+                    self.etat = "IDLE"  # On repasse en mode normal
+                else:
+                    self.texture = self.textures_attaque[self.frame_actuelle]
+            else:
+                # Animation normale (IDLE/MARCHE)
+                self.frame_actuelle %= len(textures_a_utiliser)
+                self.texture = textures_a_utiliser[self.frame_actuelle]
+
+        # --- 4. ORIENTATION (Flip / Rotation) ---
+        if self.etat == "ATTAQUE" and self.direction_attaque == "HAUT":
+            self.angle = 90
+        else:
+            self.angle = 0
+            if hasattr(self, "flipped_horizontally"):
+                if self.flipped_horizontally:
+                    self.width = -abs(self.width)
+                else:
+                    self.width = abs(self.width)
 
     def escalader(self, liste_murs, direction_x):
         # On vérifie s'il y a un mur juste à côté de nous dans la direction où on avance

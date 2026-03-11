@@ -152,6 +152,10 @@ class MonJeu(arcade.View):
         self.show_debug = False
         self.fps = 0
 
+        self.timer_degats = 0
+        self.show_hitboxes = True
+
+
     def setup(self):
         """ Configuration initiale du niveau et du spawn """
         
@@ -348,15 +352,31 @@ class MonJeu(arcade.View):
                 for z in zones_touchees:
                     z.remove_from_sprite_lists()
 
-        # --- DÉGATS DU BOSS ---
-        # On ne vérifie les dégâts que si des ennemis existent
-        if len(self.tiroirs["ennemis"]) > 0:
-            boss_hit = arcade.check_for_collision_with_list(self.fleur, self.tiroirs["ennemis"])
-            for b in boss_hit:
-                if isinstance(b, Boss):
-                    self.fleur.vie -= 0.5 # Dégâts continus
+        # --- GESTION DES DÉGÂTS ---
+        self.timer_degats += delta_time
+        
+        # On récupère la liste des ennemis qui touchent la fleur
+        ennemis_proches = arcade.check_for_collision_with_list(self.fleur, self.tiroirs["ennemis"])
 
+        if ennemis_proches:
+            # Si 1 seconde (ou plus) s'est écoulée
+            if self.timer_degats >= 1.0:
+                self.fleur.vie -= 1    # -1 PV = -0.5 coeur
+                print(f"DEBUG: Vie actuelle = {self.fleur.vie}/20") # <--- AJOUTE ÇA
+                self.timer_degats = 0  # On reset le timer à ZERO
+                
+                # Feedback visuel : flash rouge
+                self.fleur.color = arcade.color.RED
+        else:
+            # Si on ne touche rien, on remet la couleur normale
+            # et on fait grimper le timer pour que le prochain coup soit instantané
+            self.fleur.color = arcade.color.WHITE
+            if self.timer_degats < 1.0:
+                self.timer_degats += delta_time
 
+        if self.fleur.vie <= 0:
+            print("Game Over")
+            self.setup() # Pour recommencer le niveau
 
     def on_draw(self):
         self.clear()
@@ -382,6 +402,8 @@ class MonJeu(arcade.View):
         self.tiroirs["pluie"].draw()
         self.tiroirs["tirs"].draw()
         
+        self.tiroirs["ennemis"].draw_hit_boxes()
+        self.tiroirs["joueur"].draw_hit_boxes()
         # 1er plan (Devant tout le monde)
         if "front" in self.tiroirs:
             self.tiroirs["front"].draw()
