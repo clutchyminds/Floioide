@@ -211,19 +211,3 @@ class PetitMob(EntiteAnimee):
         # Utilise un carré rouge temporaire ou une image de mobtest
         self.texture = arcade.make_soft_square_texture(40, (255, 0, 0))
 
-class Goutte(arcade.Sprite):
-    def __init__(self, x, y):
-        super().__init__(scale=1.0)
-        self.texture = arcade.make_soft_circle_texture(10, arcade.color.BLUE_GRAY)
-        self.center_x = x
-        self.center_y = y
-        self.vitesse = 4
-
-    # Ajoute delta_time=1/60 ici pour accepter l'argument d'Arcade
-    def update(self, delta_time=1/60):
-        # La goutte tombe
-        self.center_y -= self.vitesse
-        
-        # Si elle sort de l'écran, on la supprime
-        if self.center_y < -100: # Un peu de marge sous l'écran
-            self.remove_from_sprite_lists()

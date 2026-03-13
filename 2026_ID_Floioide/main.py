@@ -126,8 +126,7 @@ class MonJeu(arcade.View):
             "boss_test": arcade.SpriteList(),
             "ennemis": arcade.SpriteList(),
             "tirs": arcade.SpriteList(),
-            "joueur": arcade.SpriteList(),
-            "pluie": arcade.SpriteList()
+            "joueur": arcade.SpriteList()
         }
         
         # 2. Initialisation des outils
@@ -196,6 +195,7 @@ class MonJeu(arcade.View):
             self.tile_map = arcade.TileMap() 
 
         self.tiroirs["joueur"].append(self.fleur)
+        self.tiroirs["fontaines"] = self.tile_map.sprite_lists.get("fontaine", arcade.SpriteList())
 
         # 2. Moteur Physique
         self.physique = arcade.PhysicsEnginePlatformer(
@@ -238,7 +238,14 @@ class MonJeu(arcade.View):
         # 2. GESTION DU DASH (Timers et États)
         if self.fleur.timer_dash > 0:
             self.fleur.timer_dash -= delta_time
-            
+
+        # --- RECHARGE EAU VIA FONTAINE ---
+        # On vérifie si le joueur touche une tuile du calque fontaine
+        if arcade.check_for_collision_with_list(self.fleur, self.tiroirs["fontaines"]):
+            # 5% par seconde signifie : 5 * delta_time
+            self.fleur.eau = min(100, self.fleur.eau + (5 * delta_time))
+
+
         est_en_train_de_dasher = self.fleur.timer_dash > 6.8 
         self.fleur.en_dash = est_en_train_de_dasher
 
@@ -307,22 +314,6 @@ class MonJeu(arcade.View):
             ennemi = PetitMob(self.fleur.center_x + offset, self.fleur.center_y + 100)
             self.tiroirs["ennemis"].append(ennemi)
             self.temps_depuis_dernier_mob = 0
-
-        # Système de pluie
-        if random.random() < 0.1: 
-            self.tiroirs["pluie"].append(Goutte(self.fleur.center_x + random.randint(-600, 600), self.fleur.center_y + 500))
-
-        self.tiroirs["pluie"].update()
-
-        # Hydratation (Collision pluie)
-        gouttes_touchees = arcade.check_for_collision_with_list(self.fleur, self.tiroirs["pluie"])
-        for goutte in gouttes_touchees:
-            goutte.remove_from_sprite_lists()
-            self.fleur.eau = min(100, self.fleur.eau + 2)
-
-        for goutte in self.tiroirs["pluie"]:
-            if goutte.top < self.fleur.center_y - 400:
-                goutte.remove_from_sprite_lists()
 
         # 8. SONS DE PAS
         if abs(self.fleur.change_x) > 0.1 and self.physique.can_jump() and not est_en_train_de_dasher:
@@ -399,7 +390,6 @@ class MonJeu(arcade.View):
         # Les entités
         self.tiroirs["ennemis"].draw()
         self.tiroirs["joueur"].draw() # Dessine la plante via la liste (plus fiable)
-        self.tiroirs["pluie"].draw()
         self.tiroirs["tirs"].draw()
         
         self.tiroirs["ennemis"].draw_hit_boxes()
@@ -407,7 +397,8 @@ class MonJeu(arcade.View):
         # 1er plan (Devant tout le monde)
         if "front" in self.tiroirs:
             self.tiroirs["front"].draw()
-
+            # À la fin de on_draw, juste avant self.camera_gui.use()
+        self.tiroirs["fontaines"].draw()
         # 3. On active la caméra de l'interface (HUD)
         self.camera_gui.use()
         self.hud.dessiner(self.fleur)
