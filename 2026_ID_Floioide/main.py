@@ -4,7 +4,7 @@ import os
 from sources.constantes import *
 from sources.entities import Joueur, Boss, PetitMob
 from sources.inputs import InputHandler
-from sources.interface import HUD
+from sources.interface import HUD, InterfaceShop
 from sources.logic import gerer_collisions
 from sources.entities import Joueur, Boss, PetitMob, PNJ
 from sources.interface import HUD, InterfaceShop
@@ -182,9 +182,9 @@ class MonJeu(arcade.View):
             # Calque test (Visuel seulement)
             self.tiroirs["test"] = self.tile_map.sprite_lists.get("boss-test", arcade.SpriteList())
 
-            pnj_base = PNJ(790, 2550)
-            self.tiroirs["pnjs"].append(pnj_base)
-            
+            self.tiroirs["pnjs"] = arcade.SpriteList()
+            mon_pnj = PNJ(x=790, y=2550)
+            self.tiroirs["pnjs"].append(mon_pnj)
             # --- Logique de Spawn ---
             spawn_x, spawn_y = 2026, 1700
             if "Positions" in self.tile_map.object_lists:
@@ -239,21 +239,37 @@ class MonJeu(arcade.View):
         self.inputs.on_key_release(key)
 
     def on_mouse_motion(self, x, y, dx, dy):
-        # On convertit les coordonnées de l'écran en coordonnées du monde (jeu)
-        # car la caméra a pu bouger
-        mouse_x = x + self.camera_jeu.position.x
-        mouse_y = y + self.camera_jeu.position.y
+        # 1. Ajustement par rapport à la caméra
+        # Si tu utilises Camera2D dans Arcade 3.0, c'est bottom_left.x !
+        # Si tu utilises l'ancienne Camera, c'est position.x
+        self.shop.update_souris(x, y)
+
+        try:
+            mouse_x = x + self.camera_jeu.bottom_left.x
+            mouse_y = y + self.camera_jeu.bottom_left.y
+        except AttributeError:
+            mouse_x = x + self.camera_jeu.position.x
+            mouse_y = y + self.camera_jeu.position.y
         
-        for pnj in self.tiroirs["pnjs"]:
-            # arcade.check_for_collision_with_list est pour les sprites, 
-            # ici on vérifie si un point (la souris) touche le sprite
-            pnj.est_survole = pnj.collides_with_point((mouse_x, mouse_y))
+        # 2. On remet tout le monde à False
+        for pnj in self.tiroirs.get("pnjs", []):
+            pnj.est_survole = False
+            
+        # 3. On détecte qui est sous la souris
+        pnjs_touches = arcade.get_sprites_at_point((mouse_x, mouse_y), self.tiroirs.get("pnjs", arcade.SpriteList()))
+        for pnj in pnjs_touches:
+            pnj.est_survole = True
 
     def on_mouse_press(self, x, y, button, modifiers):
         if button == arcade.MOUSE_BUTTON_LEFT:
-            for pnj in self.tiroirs["pnjs"]:
+            for pnj in self.tiroirs.get("pnjs", []):
                 if pnj.est_survole:
+                    print("BINGO ! PNJ cliqué !") # Ce texte s'affichera dans ton terminal
                     self.shop.ouvert = not self.shop.ouvert
+        if self.shop.ouvert:
+            # Si on clique alors que la croix est survolée, on ferme
+            if self.shop.croix_survolee:
+                self.shop.ouvert = False
 
     def on_update(self, delta_time):
         # 1. Calcul des FPS pour le menu F3
@@ -500,7 +516,7 @@ class MonJeu(arcade.View):
                 multiline=True,
                 width=300
             )
-        
+        self.shop.dessiner()
 def main():
     window = arcade.Window(LARGEUR, HAUTEUR, TITRE)
     intro = CinematiqueView()

@@ -95,26 +95,80 @@ class InterfaceShop:
         self.ouvert = False
         self.largeur = 500
         self.hauteur = 400
+        
+        # On garde une trace de l'élément survolé pour l'effet de zoom
+        self.index_survole = -1 
+        self.croix_survolee = False
+
+        # Chemins (adaptés à ton arborescence)
+        chemin_pnj = os.path.join(DOSSIER_DATA, "mobs", "PNJ")
+        chemin_items = os.path.join(chemin_pnj, "items")
+        
+        # Chargement textures
+        self.tex_gui = arcade.load_texture(os.path.join(chemin_pnj, "gui.png"))
+        self.tex_bouton = arcade.load_texture(os.path.join(chemin_pnj, "boutton1.png"))
+        # Pour la croix, on peut utiliser une texture ou un simple texte "X"
+        # self.tex_croix = arcade.load_texture(os.path.join(chemin_pnj, "croix.png"))
+
         self.items_en_vente = [
-            {"nom": "Graine de vie", "prix": 10, "img": "test.png"},
-            {"nom": "Engrais Turbo", "prix": 25, "img": "test.png"}
+            {"nom": "Graine de vie", "prix": 10, "texture": arcade.load_texture(os.path.join(chemin_items, "test.png"))},
+            {"nom": "Engrais Turbo", "prix": 25, "texture": arcade.load_texture(os.path.join(chemin_items, "test.png"))}
         ]
+
+    def update_souris(self, x, y):
+        """Appelé depuis main.py pour mettre à jour les effets de survol"""
+        if not self.ouvert:
+            return
+
+        cx, cy = LARGEUR / 2, HAUTEUR / 2
+        self.index_survole = -1
+        self.croix_survolee = False
+
+        # 1. Détection survol des boutons d'items
+        for i in range(len(self.items_en_vente)):
+            y_item = cy + 60 - (i * 80)
+            # On crée un rectangle imaginaire pour la zone du bouton (400x60)
+            if cx - 200 < x < cx + 200 and y_item - 30 < y < y_item + 30:
+                self.index_survole = i
+
+        # 2. Détection survol de la croix (en haut à droite du GUI)
+        if cx + 210 < x < cx + 240 and cy + 170 < y < cy + 195:
+            self.croix_survolee = True
 
     def dessiner(self):
         if not self.ouvert:
             return
 
         cx, cy = LARGEUR / 2, HAUTEUR / 2
-        # Fond du menu (centré)
-        arcade.draw_rect_filled(
-            rect=arcade.rect.XYWH(cx, cy, 500, 400), 
-            color=(50, 50, 50, 240)
-        )
+        
+        # FOND DU MENU
+        arcade.draw_texture_rect(self.tex_gui, arcade.rect.XYWH(cx, cy, self.largeur, self.hauteur))
 
-        arcade.draw_text("BOUTIQUE", cx - 60, cy + 160, arcade.color.WHITE, 20, bold=True)
+        # LA CROIX DE FERMETURE
+        couleur_croix = arcade.color.RED if self.croix_survolee else arcade.color.WHITE
+        taille_croix = 25 if self.croix_survolee else 20
+        arcade.draw_text("X", cx + 225, cy + 180, couleur_croix, taille_croix, anchor_x="center", anchor_y="center", bold=True)
 
+        # AFFICHAGE DES OBJETS
         for i, item in enumerate(self.items_en_vente):
-            y_item = cy + 80 - (i * 70)
-            # Bouton
-            arcade.draw_lrbt_rectangle_filled(cx - 200, cx + 200, y_item - 25, y_item + 25, arcade.color.DARK_SLATE_GRAY)
-            arcade.draw_text(f"{item['nom']} : {item['prix']} $", cx - 180, y_item - 5, arcade.color.WHITE, 14)
+            y_item = cy + 60 - (i * 80)
+            
+            # Calcul du coefficient de grossissement (scale)
+            # Si survolé, on multiplie la taille par 1.05 (5% plus gros)
+            coeff = 1.05 if self.index_survole == i else 1.0
+            
+            # Dessin du bouton avec le coefficient
+            arcade.draw_texture_rect(
+                texture=self.tex_bouton,
+                rect=arcade.rect.XYWH(cx, y_item, 400 * coeff, 60 * coeff)
+            )
+            
+            # Icône de l'objet
+            arcade.draw_texture_rect(
+                texture=item["texture"],
+                rect=arcade.rect.XYWH(cx - 150, y_item, 40 * coeff, 40 * coeff)
+            )
+            
+            # Texte (on augmente un peu la taille de police si survolé)
+            taille_police = 16 if self.index_survole == i else 14
+            arcade.draw_text(f"{item['nom']} : {item['prix']} $", cx - 90, y_item - 6, arcade.color.WHITE, taille_police)
