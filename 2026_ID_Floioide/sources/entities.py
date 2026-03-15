@@ -44,7 +44,11 @@ class Joueur(EntiteAnimee):
 
         self.vie_max = 20
         self.vie = 20
-            
+        
+        self.monnaie = 0
+        self.inventaire = [None] * 5  # 5 slots vides
+
+
         # 1. Chargement de l'image de base (Idle)
         # Chemin selon l'image : data/player/player.png
         self.tex_idle = arcade.load_texture(os.path.join(DOSSIER_DATA, "player", "player.png"))        
@@ -165,7 +169,8 @@ class Boss(EntiteAnimee):
         self.timer_pause = 0
         self.frame_actuelle = 0
         self.cible = None 
-        
+        self.vie = 50  # Modifie selon la résistance voulue
+
         if self.textures_attaque:
             self.texture = self.textures_attaque[0]
 
@@ -211,3 +216,46 @@ class PetitMob(EntiteAnimee):
         # Utilise un carré rouge temporaire ou une image de mobtest
         self.texture = arcade.make_soft_square_texture(40, (255, 0, 0))
 
+class PNJ(arcade.Sprite):
+    def __init__(self, x, y):
+        super().__init__(center_x=x, center_y=y, scale=0.5)
+        chemin_pnj = os.path.join(DOSSIER_DATA, "mobs", "PNJ")
+        
+        # Sécurité si les images n'existent pas encore
+        try:
+            self.tex1 = arcade.load_texture(os.path.join(chemin_pnj, "PNJ1.png"))
+            self.tex2 = arcade.load_texture(os.path.join(chemin_pnj, "PNJ2.png"))
+        except:
+            self.tex1 = arcade.make_soft_square_texture(50, arcade.color.BLUE)
+            self.tex2 = arcade.make_soft_square_texture(50, arcade.color.LIGHT_BLUE)
+
+        self.texture = self.tex1
+        self.timer_anim = 0
+        self.est_survole = False
+
+    def update_animation(self, delta_time=1/60):
+        # 1. Animation (switch toutes les 0.5s)
+        self.timer_anim += delta_time
+        if self.timer_anim > 0.5:
+            self.timer_anim = 0
+            self.texture = self.tex2 if self.texture == self.tex1 else self.tex1
+
+        # 2. Changement de couleur au survol
+        if self.est_survole:
+            self.color = arcade.color.YELLOW
+        else:
+            self.color = arcade.color.WHITE
+
+    def draw(self, **kwargs):
+        # 1. Dessiner le sprite normalement
+        super().draw(**kwargs)
+        
+        # 2. Si survolé, on ajoute un contour blanc (Glow effect)
+        if self.est_survole:
+            # On dessine un rectangle vide autour du sprite
+            # On utilise les dimensions du sprite
+            arcade.draw_rect_outline(
+                rect=self.rect,
+                color=arcade.color.WHITE,
+                border_width=3
+            )

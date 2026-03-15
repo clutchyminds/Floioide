@@ -2,11 +2,12 @@ import arcade
 import random
 import os
 from sources.constantes import *
-from sources.entities import Joueur, Boss, PetitMob, Goutte
+from sources.entities import Joueur, Boss, PetitMob
 from sources.inputs import InputHandler
 from sources.interface import HUD
 from sources.logic import gerer_collisions
-
+from sources.entities import Joueur, Boss, PetitMob, PNJ
+from sources.interface import HUD, InterfaceShop
 
 class CinematiqueView(arcade.View):
     def __init__(self):
@@ -126,7 +127,8 @@ class MonJeu(arcade.View):
             "boss_test": arcade.SpriteList(),
             "ennemis": arcade.SpriteList(),
             "tirs": arcade.SpriteList(),
-            "joueur": arcade.SpriteList()
+            "joueur": arcade.SpriteList(),
+            "pnjs": arcade.SpriteList()
         }
         
         # 2. Initialisation des outils
@@ -154,6 +156,9 @@ class MonJeu(arcade.View):
         self.timer_degats = 0
         self.show_hitboxes = True
 
+        self.timer_soin_fontaine = 0
+
+        self.shop = InterfaceShop()
 
     def setup(self):
         """ Configuration initiale du niveau et du spawn """
@@ -177,6 +182,9 @@ class MonJeu(arcade.View):
             # Calque test (Visuel seulement)
             self.tiroirs["test"] = self.tile_map.sprite_lists.get("boss-test", arcade.SpriteList())
 
+            pnj_base = PNJ(790, 2550)
+            self.tiroirs["pnjs"].append(pnj_base)
+            
             # --- Logique de Spawn ---
             spawn_x, spawn_y = 2026, 1700
             if "Positions" in self.tile_map.object_lists:
@@ -230,6 +238,23 @@ class MonJeu(arcade.View):
     def on_key_release(self, key, modifiers):
         self.inputs.on_key_release(key)
 
+    def on_mouse_motion(self, x, y, dx, dy):
+        # On convertit les coordonnées de l'écran en coordonnées du monde (jeu)
+        # car la caméra a pu bouger
+        mouse_x = x + self.camera_jeu.position.x
+        mouse_y = y + self.camera_jeu.position.y
+        
+        for pnj in self.tiroirs["pnjs"]:
+            # arcade.check_for_collision_with_list est pour les sprites, 
+            # ici on vérifie si un point (la souris) touche le sprite
+            pnj.est_survole = pnj.collides_with_point((mouse_x, mouse_y))
+
+    def on_mouse_press(self, x, y, button, modifiers):
+        if button == arcade.MOUSE_BUTTON_LEFT:
+            for pnj in self.tiroirs["pnjs"]:
+                if pnj.est_survole:
+                    self.shop.ouvert = not self.shop.ouvert
+
     def on_update(self, delta_time):
         # 1. Calcul des FPS pour le menu F3
         if delta_time > 0:
@@ -239,11 +264,23 @@ class MonJeu(arcade.View):
         if self.fleur.timer_dash > 0:
             self.fleur.timer_dash -= delta_time
 
-        # --- RECHARGE EAU VIA FONTAINE ---
-        # On vérifie si le joueur touche une tuile du calque fontaine
+        # Dans main.py, méthode on_update
+        # --- LOGIQUE FONTAINE (EAU + VIE) ---
         if arcade.check_for_collision_with_list(self.fleur, self.tiroirs["fontaines"]):
-            # 5% par seconde signifie : 5 * delta_time
+            # 1. Recharge d'eau (5% par seconde)
             self.fleur.eau = min(100, self.fleur.eau + (5 * delta_time))
+    
+            # 2. Recharge de vie (1 PV toutes les 3 secondes)
+            self.timer_soin_fontaine += delta_time
+            if self.timer_soin_fontaine >= 3.0:
+                if self.fleur.vie < self.fleur.vie_max:
+                    self.fleur.vie += 1
+                    print(f"Soin ! Vie : {self.fleur.vie}")
+                self.timer_soin_fontaine = 0 # Reset du chrono
+        else:
+            # Si on sort de la fontaine, on peut reset le timer 
+            # pour ne pas "stocker" du temps de soin à l'extérieur
+            self.timer_soin_fontaine = 0
 
 
         est_en_train_de_dasher = self.fleur.timer_dash > 6.8 
@@ -368,12 +405,31 @@ class MonJeu(arcade.View):
         if self.fleur.vie <= 0:
             print("Game Over")
             self.setup() # Pour recommencer le niveau
+        # Anime les PNJ
+        for pnj in self.tiroirs["pnjs"]:
+            pnj.update_animation(delta_time)
 
+        # --- GESTION DES DÉGÂTS SUR LE BOSS ET MONNAIE ---
+        # (Remplace ton appel à gerer_collisions pour les boss par ceci)
+        for tir in self.tiroirs["tirs"]:
+            ennemis_touches = arcade.check_for_collision_with_list(tir, self.tiroirs["ennemis"])
+            if ennemis_touches:
+                tir.remove_from_sprite_lists()
+                for ennemi in ennemis_touches:
+                    if isinstance(ennemi, Boss):
+                        ennemi.vie -= 10
+                        self.fleur.monnaie += 1  # +1 par tap
+                        if ennemi.vie <= 0:
+                            ennemi.remove_from_sprite_lists()
+                            self.fleur.monnaie += 10 # +10 au kill
+                    else:
+                        ennemi.remove_from_sprite_lists() # Les petits mobs meurent direct
     def on_draw(self):
         self.clear()
         
         # 1. On active la caméra du jeu
         self.camera_jeu.use()
+        
         
         # 2. On dessine les calques dans l'ordre (Arrière vers Avant)
         # 4ème plan
@@ -389,16 +445,35 @@ class MonJeu(arcade.View):
         
         # Les entités
         self.tiroirs["ennemis"].draw()
-        self.tiroirs["joueur"].draw() # Dessine la plante via la liste (plus fiable)
         self.tiroirs["tirs"].draw()
+        
+        self.hud.dessiner_inventaire_et_monnaie(self.fleur)
+        self.shop.dessiner()
         
         self.tiroirs["ennemis"].draw_hit_boxes()
         self.tiroirs["joueur"].draw_hit_boxes()
         # 1er plan (Devant tout le monde)
         if "front" in self.tiroirs:
             self.tiroirs["front"].draw()
-            # À la fin de on_draw, juste avant self.camera_gui.use()
-        self.tiroirs["fontaines"].draw()
+
+        if "fontaines" in self.tiroirs:
+            self.tiroirs["fontaines"].draw()
+        
+        # On dessine la liste des PNJs
+        if "pnjs" in self.tiroirs:
+            self.tiroirs["pnjs"].draw()
+            
+            # On rajoute les contours par-dessus si survolé
+            for pnj in self.tiroirs["pnjs"]:
+                if pnj.est_survole:
+                    arcade.draw_rect_outline(
+                        rect=pnj.rect,
+                        color=arcade.color.WHITE,
+                        border_width=3
+                    )
+
+        self.tiroirs["joueur"].draw() # Dessine la plante via la liste (plus fiable)
+
         # 3. On active la caméra de l'interface (HUD)
         self.camera_gui.use()
         self.hud.dessiner(self.fleur)
@@ -425,7 +500,7 @@ class MonJeu(arcade.View):
                 multiline=True,
                 width=300
             )
-
+        
 def main():
     window = arcade.Window(LARGEUR, HAUTEUR, TITRE)
     intro = CinematiqueView()
