@@ -38,7 +38,11 @@ class EntiteAnimee(arcade.Sprite):
 class Joueur(EntiteAnimee):
     def __init__(self, x, y):
         super().__init__(x, y, taille=0.4)
-        self.eau = 100
+        self.monnaie = 100
+        self.eau = 100       # De 0 à 100
+        self.energie = 0     # Commence à 0, monte à 100
+        self.timer_energie = 0
+
         self.en_escalade = False
         self.en_dash = False
 
@@ -46,7 +50,6 @@ class Joueur(EntiteAnimee):
         self.vie = 20
         
         self.inventaire = [None] * 5  # 5 slots vides
-        self.monnaie = 100
 
         # 1. Chargement de l'image de base (Idle)
         # Chemin selon l'image : data/player/player.png

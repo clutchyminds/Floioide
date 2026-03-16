@@ -2,12 +2,10 @@ import arcade
 import random
 import os
 from sources.constantes import *
-from sources.entities import Joueur, Boss, PetitMob
 from sources.inputs import InputHandler
-from sources.interface import HUD, InterfaceShop
 from sources.logic import gerer_collisions
 from sources.entities import Joueur, Boss, PetitMob, PNJ
-from sources.interface import HUD, InterfaceShop
+from sources.interface import HUD, Chat, InterfaceShop
 
 class CinematiqueView(arcade.View):
     def __init__(self):
@@ -159,6 +157,7 @@ class MonJeu(arcade.View):
         self.timer_soin_fontaine = 0
 
         self.shop = InterfaceShop()
+        self.chat = Chat()
 
     def setup(self):
         """ Configuration initiale du niveau et du spawn """
@@ -222,8 +221,30 @@ class MonJeu(arcade.View):
         # .get() permet d'éviter un plantage si le calque n'existe pas dans Tiled
         self.tiroirs["declencheurs"] = self.tile_map.sprite_lists.get("test", arcade.SpriteList())
 
+    def on_text(self, text):
+        """Fonction appelée automatiquement par Arcade quand on tape au clavier"""
+        # Si le chat est actif et qu'on ne tape pas 'Entrée' ou 'T' au hasard
+        if self.chat.actif and text != '\r' and text.isprintable():
+            self.chat.texte_saisie += text
 
     def on_key_press(self, key, modifiers):
+        # --- GESTION DU CHAT ---
+        if key == arcade.key.T and not self.chat.actif:
+            self.chat.actif = True
+            return 
+
+        if self.chat.actif:
+            if key == arcade.key.ENTER:
+                if self.chat.texte_saisie.strip():
+                    self.chat.ajouter_message(f"Moi: {self.chat.texte_saisie}")
+                self.chat.actif = False
+                self.chat.texte_saisie = ""
+            elif key == arcade.key.BACKSPACE:
+                self.chat.texte_saisie = self.chat.texte_saisie[:-1]
+            return # Bloque les mouvements quand on écrit
+        
+            
+        
         self.inputs.on_key_press(key)
         # Saut simple (uniquement si au sol)
         if key == arcade.key.SPACE and self.physique.can_jump():
@@ -234,7 +255,14 @@ class MonJeu(arcade.View):
         if key == arcade.key.F3:
             self.show_debug = not self.show_debug
 
-
+        if key == arcade.key.LSHIFT: # Si on appuie sur Dash
+            if self.fleur.energie >= 100: # On ne dash que si la barre est pleine
+                self.fleur.energie = 0   # On vide la barre
+                # Lancer ton code de Dash ici (vitesse_boost, etc.)
+                self.chat.ajouter_message("DASH !", arcade.color.GOLD)
+            else:
+                self.chat.ajouter_message("Énergie insuffisante...", arcade.color.GRAY)
+                
     def on_key_release(self, key, modifiers):
         self.inputs.on_key_release(key)
 
@@ -260,42 +288,39 @@ class MonJeu(arcade.View):
         for pnj in pnjs_touches:
             pnj.est_survole = True
 
-    '''
     def on_mouse_press(self, x, y, button, modifiers):
-        # 1. Si la boutique est ouverte, on gère d'ABORD sa fermeture
+        # On donne la priorité au shop s'il est ouvert
         if self.shop.ouvert:
+            # On passe self.chat à la fonction
+            clic_utile = self.shop.check_achat(x, y, self.fleur, self.chat)
+            if clic_utile:
+                return # Si on a cliqué sur un bouton ou la croix, on s'arrête là
+        # --- 1. GESTION DU SHOP ---
+        if self.shop.ouvert:
+            # Si on clique sur la croix
             if self.shop.croix_survolee:
                 self.shop.ouvert = False
-                # TRÈS IMPORTANT : On quitte la fonction ici pour ne pas 
-                # déclencher d'autres actions au même moment.
-                return 
-
-        # 2. Logique pour OUVRIR la boutique (seulement si elle est fermée)
-        if not self.shop.ouvert:
-            for pnj in self.tiroirs["pnjs"]:
-                if pnj.est_survole:
-                    self.shop.ouvert = True
-                    return # On ouvre et on s'arrête
-    '''
-    def on_mouse_press(self, x, y, button, modifiers):
-        # 1. Gestion de la fermeture
-        if self.shop.ouvert:
-            if self.shop.croix_survolee:
-                self.shop.ouvert = False
-                return
+                return # On s'arrête là pour ne pas tirer ou cliquer derrière
         
-            # 2. Gestion de l'achat
-            # On passe 'self.fleur' (ton joueur) pour qu'il puisse payer
-            self.shop.check_achat(x, y, self.fleur)
+            # Si on clique sur un bouton d'achat
+            # On récupère le résultat de l'achat pour le chat
+            resultat = self.shop.check_achat(x, y, self.fleur)
+            if resultat:
+                self.hud.ajouter_message(resultat) # On ajoute le message au chat
             return
 
-        # 3. Ouverture du shop via PNJ
-        if not self.shop.ouvert:
-            for pnj in self.tiroirs["pnjs"]:
-                if pnj.est_survole:
-                    self.shop.ouvert = True
-                    return
+        # --- 2. OUVERTURE DU SHOP (Logique PNJ existante) ---
+        for pnj in self.tiroirs["pnjs"]:
+            if pnj.est_survole:
+                self.shop.ouvert = True
+                self.chat.ajouter_message("Boutique ouverte.")
+                return
+
+
+        
     def on_update(self, delta_time):
+        self.chat.update(delta_time)
+
         # 1. Calcul des FPS pour le menu F3
         if delta_time > 0:
             self.fps = 1 / delta_time
@@ -464,6 +489,14 @@ class MonJeu(arcade.View):
                             self.fleur.monnaie += 10 # +10 au kill
                     else:
                         ennemi.remove_from_sprite_lists() # Les petits mobs meurent direct
+        if self.fleur.energie < 100:
+            self.fleur.timer_energie += delta_time
+            if self.fleur.timer_energie >= 2.0: # Toutes les 2 secondes
+                self.fleur.energie += 25
+                self.fleur.timer_energie = 0
+                if self.fleur.energie > 100:
+                    self.fleur.energie = 100
+
     def on_draw(self):
         self.clear()
         
@@ -541,6 +574,12 @@ class MonJeu(arcade.View):
                 width=300
             )
         self.shop.dessiner()
+
+        self.camera_gui.use()
+        self.hud.dessiner(self.fleur)
+        self.chat.dessiner() # On dessine le chat par dessus tout
+        self.shop.dessiner()
+
 def main():
     window = arcade.Window(LARGEUR, HAUTEUR, TITRE)
     intro = CinematiqueView()
