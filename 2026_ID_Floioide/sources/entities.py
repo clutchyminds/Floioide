@@ -1,5 +1,6 @@
-import arcade
+import random 
 import os
+import arcade
 from sources.constantes import DOSSIER_DATA, VITESSE_MARCHE
 
 class EntiteAnimee(arcade.Sprite):
@@ -213,10 +214,42 @@ class Boss(EntiteAnimee):
 
 class PetitMob(EntiteAnimee):
     def __init__(self, x, y):
-        super().__init__(x, y, taille=0.5)
+        # On force la taille à 0.3 pour qu'ils ne soient pas géants
+        super().__init__(x, y, taille=0.3)
+        
+        chemin_mobs = os.path.join(DOSSIER_DATA, "mobs", "sol")
+        # Chargement des textures mob_sol.1.png à mob_sol.5.png
+        for i in range(1, 6):
+            tex = arcade.load_texture(os.path.join(chemin_mobs, f"mob_sol.{i}.png"))
+            self.textures.append(tex)
+        
+        self.texture = self.textures[0]
         self.vitesse = 2
-        # Utilise un carré rouge temporaire ou une image de mobtest
-        self.texture = arcade.make_soft_square_texture(40, (255, 0, 0))
+        self.points_de_vie = 3
+        self.direction_balade = random.choice([-1, 1])
+        self.timer_balade = 0
+
+    def update_animation(self, delta_time=1/60):
+        # Animation automatique des 5 frames
+        super().update_animation(delta_time)
+
+    def logique_ia(self, joueur):
+        TUILE_SIZE = 64
+        distance = arcade.get_distance_between_sprites(self, joueur)
+        
+        if distance < 5 * TUILE_SIZE:
+            # Chasse le joueur
+            if self.center_x < joueur.center_x:
+                self.change_x = self.vitesse
+            else:
+                self.change_x = -self.vitesse
+        else:
+            # Se balade
+            self.timer_balade += 1/60
+            if self.timer_balade > 2.0:
+                self.direction_balade *= -1
+                self.timer_balade = 0
+            self.change_x = self.direction_balade * (self.vitesse / 2)
 
 class PNJ(arcade.Sprite):
     def __init__(self, x, y):

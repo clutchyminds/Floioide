@@ -159,6 +159,7 @@ class MonJeu(arcade.View):
         self.shop = InterfaceShop()
         self.chat = Chat()
 
+        self.timer_spawn = 0
     def setup(self):
         """ Configuration initiale du niveau et du spawn """
         
@@ -221,6 +222,7 @@ class MonJeu(arcade.View):
         # .get() permet d'éviter un plantage si le calque n'existe pas dans Tiled
         self.tiroirs["declencheurs"] = self.tile_map.sprite_lists.get("test", arcade.SpriteList())
 
+        
     def on_text(self, text):
         """Fonction appelée automatiquement par Arcade quand on tape au clavier"""
         # Si le chat est actif et qu'on ne tape pas 'Entrée' ou 'T' au hasard
@@ -262,7 +264,7 @@ class MonJeu(arcade.View):
                 self.chat.ajouter_message("DASH !", arcade.color.GOLD)
             else:
                 self.chat.ajouter_message("Énergie insuffisante...", arcade.color.GRAY)
-                
+
     def on_key_release(self, key, modifiers):
         self.inputs.on_key_release(key)
 
@@ -497,6 +499,24 @@ class MonJeu(arcade.View):
                 if self.fleur.energie > 100:
                     self.fleur.energie = 100
 
+        # 1. Gestion du Spawn toutes les 10 secondes
+        self.timer_spawn += delta_time
+        if self.timer_spawn >= 10.0:
+            # On choisit un côté aléatoire (gauche ou droite du joueur)
+            offset_x = random.choice([-400, 400])
+            nouveau_mob = PetitMob(self.fleur.center_x + offset_x, self.fleur.center_y + 200)
+            self.tiroirs["ennemis"].append(nouveau_mob)
+            self.timer_spawn = 0
+
+        # 2. Logique des mobs (IA et Dégâts)
+        for mob in self.tiroirs["ennemis"]:
+            mob.logique_ia(self.fleur)
+        
+            # Vérification contact avec le joueur (0.5 coeur = 1 point de vie si 1 coeur = 2 points)
+            if arcade.check_for_collision(mob, self.fleur):
+                # On perd de la vie proportionnellement au temps (0.5 coeur par seconde)
+                self.fleur.vie -= 1 * delta_time 
+                if self.fleur.vie < 0: self.fleur.vie = 0
     def on_draw(self):
         self.clear()
         
