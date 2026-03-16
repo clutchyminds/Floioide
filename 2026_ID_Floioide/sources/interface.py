@@ -12,7 +12,27 @@ class HUD:
         self.tex_plein = arcade.load_texture(os.path.join(chemin_vies, "vie1.png"))
         self.tex_demi = arcade.load_texture(os.path.join(chemin_vies, "vie0.5.png"))
         self.tex_vide = arcade.load_texture(os.path.join(chemin_vies, "vie0.png"))
+
+    def dessiner(self, joueur):
+        # --- (Ton code existant pour les cœurs) ---
         
+        # --- AFFICHAGE DE L'monnaie ---
+        # On dessine un petit fond pour le texte
+        arcade.draw_rect_filled(
+            arcade.rect.LBWH(40, HAUTEUR - 90, 120, 35),
+            (0, 0, 0, 120) # Noir transparent
+        )
+        
+        # Le texte du compteur
+        arcade.draw_text(
+            f"monnaie: {joueur.monnaie} $",
+            50, HAUTEUR - 82,
+            arcade.color.GOLD,
+            16,
+            bold=True,
+            font_name="Kenney Future" # Si tu as cette police
+        )
+
     def dessiner(self, joueur):
         # --- AFFICHAGE DES 10 CŒURS ---
         x_depart = 40
@@ -172,3 +192,21 @@ class InterfaceShop:
             # Texte (on augmente un peu la taille de police si survolé)
             taille_police = 16 if self.index_survole == i else 14
             arcade.draw_text(f"{item['nom']} : {item['prix']} $", cx - 90, y_item - 6, arcade.color.WHITE, taille_police)
+    def check_achat(self, x, y, joueur):
+        """Vérifie si on clique sur un item et si on a assez d'monnaie"""
+        if not self.ouvert:
+            return
+
+        cx, cy = LARGEUR / 2, HAUTEUR / 2
+        
+        for i, item in enumerate(self.items_en_vente):
+            y_item = cy + 60 - (i * 80)
+            
+            # Si on clique sur le bouton de l'item
+            if cx - 200 < x < cx + 200 and y_item - 30 < y < y_item + 30:
+                if joueur.monnaie >= item["prix"]:
+                    joueur.monnaie -= item["prix"]
+                    print(f"Achat réussi : {item['nom']} !")
+                    # Ici tu pourras ajouter l'objet dans l'inventaire du joueur plus tard
+                else:
+                    print("Pas assez d'monnaie !")

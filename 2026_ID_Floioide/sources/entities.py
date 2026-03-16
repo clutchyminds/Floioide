@@ -45,9 +45,8 @@ class Joueur(EntiteAnimee):
         self.vie_max = 20
         self.vie = 20
         
-        self.monnaie = 0
         self.inventaire = [None] * 5  # 5 slots vides
-
+        self.monnaie = 100
 
         # 1. Chargement de l'image de base (Idle)
         # Chemin selon l'image : data/player/player.png

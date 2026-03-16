@@ -260,17 +260,41 @@ class MonJeu(arcade.View):
         for pnj in pnjs_touches:
             pnj.est_survole = True
 
+    '''
     def on_mouse_press(self, x, y, button, modifiers):
-        if button == arcade.MOUSE_BUTTON_LEFT:
-            for pnj in self.tiroirs.get("pnjs", []):
-                if pnj.est_survole:
-                    print("BINGO ! PNJ cliqué !") # Ce texte s'affichera dans ton terminal
-                    self.shop.ouvert = not self.shop.ouvert
+        # 1. Si la boutique est ouverte, on gère d'ABORD sa fermeture
         if self.shop.ouvert:
-            # Si on clique alors que la croix est survolée, on ferme
             if self.shop.croix_survolee:
                 self.shop.ouvert = False
+                # TRÈS IMPORTANT : On quitte la fonction ici pour ne pas 
+                # déclencher d'autres actions au même moment.
+                return 
 
+        # 2. Logique pour OUVRIR la boutique (seulement si elle est fermée)
+        if not self.shop.ouvert:
+            for pnj in self.tiroirs["pnjs"]:
+                if pnj.est_survole:
+                    self.shop.ouvert = True
+                    return # On ouvre et on s'arrête
+    '''
+    def on_mouse_press(self, x, y, button, modifiers):
+        # 1. Gestion de la fermeture
+        if self.shop.ouvert:
+            if self.shop.croix_survolee:
+                self.shop.ouvert = False
+                return
+        
+            # 2. Gestion de l'achat
+            # On passe 'self.fleur' (ton joueur) pour qu'il puisse payer
+            self.shop.check_achat(x, y, self.fleur)
+            return
+
+        # 3. Ouverture du shop via PNJ
+        if not self.shop.ouvert:
+            for pnj in self.tiroirs["pnjs"]:
+                if pnj.est_survole:
+                    self.shop.ouvert = True
+                    return
     def on_update(self, delta_time):
         # 1. Calcul des FPS pour le menu F3
         if delta_time > 0:
