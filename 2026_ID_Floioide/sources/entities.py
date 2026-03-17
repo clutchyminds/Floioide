@@ -79,15 +79,16 @@ class Joueur(EntiteAnimee):
 
         self.etat = "IDLE"
         self.textures_attaque = []
+        # --- CHARGEMENT DES ATTAQUES ---
+        self.textures_attaque = []
         chemin_attaque = os.path.join(DOSSIER_DATA, "player", "attaque")
         
-        for i in range(16):
-            nom_fichier = f"frame_{i:02d}_delay-0.1s.png"
-            full_path = os.path.join(chemin_attaque, nom_fichier)
-            if os.path.exists(full_path):
-                self.textures_attaque.append(arcade.load_texture(full_path))
-            else:
-                print(f"Attention : fichier manquant {full_path}")
+        # Remplace "1, 6" selon le nombre de frames que tu as. 
+        # (Ici ça chargera attaque1.png jusqu'à attaque5.png)
+        for i in range(1, 13): 
+            nom_fichier = f"attaque{i}.png" # <-- Mets le bon nom ici
+            tex = arcade.load_texture(os.path.join(chemin_attaque, nom_fichier))
+            self.textures_attaque.append(tex)
 
     def update_animation(self, delta_time=1/60):
         # --- 1. SÉCURITÉ : Si aucune texture n'est chargée, on arrête ---
@@ -211,7 +212,9 @@ class Boss(EntiteAnimee):
             
             # Note : On ne touche JAMAIS à self.height ou self.scale ici 
             # pour éviter que le boss ne se retrouve la tête en bas.
-
+            
+        def logique_ia(self, joueur):
+            pass
 class PetitMob(EntiteAnimee):
     def __init__(self, x, y):
         # On force la taille à 0.3 pour qu'ils ne soient pas géants
@@ -234,22 +237,24 @@ class PetitMob(EntiteAnimee):
         super().update_animation(delta_time)
 
     def logique_ia(self, joueur):
-        TUILE_SIZE = 64
+        # Appliquer la gravité (ils tombent s'ils sont en l'air)
+        # On compare avec le sol (Y = 100 par exemple, ou la position du joueur)
+        sol_y = 100 
+        if self.bottom > sol_y:
+            self.change_y = -4  # Vitesse de chute
+        else:
+            self.change_y = 0
+            self.bottom = sol_y
+
+        # Déplacement horizontal
         distance = arcade.get_distance_between_sprites(self, joueur)
-        
-        if distance < 5 * TUILE_SIZE:
-            # Chasse le joueur
+        if distance < 300: # Si joueur proche
             if self.center_x < joueur.center_x:
                 self.change_x = self.vitesse
             else:
                 self.change_x = -self.vitesse
         else:
-            # Se balade
-            self.timer_balade += 1/60
-            if self.timer_balade > 2.0:
-                self.direction_balade *= -1
-                self.timer_balade = 0
-            self.change_x = self.direction_balade * (self.vitesse / 2)
+            self.change_x = 0
 
 class PNJ(arcade.Sprite):
     def __init__(self, x, y):

@@ -499,24 +499,30 @@ class MonJeu(arcade.View):
                 if self.fleur.energie > 100:
                     self.fleur.energie = 100
 
-        # 1. Gestion du Spawn toutes les 10 secondes
+        # 1. Spawn toutes les 20 secondes
         self.timer_spawn += delta_time
-        if self.timer_spawn >= 10.0:
-            # On choisit un côté aléatoire (gauche ou droite du joueur)
-            offset_x = random.choice([-400, 400])
-            nouveau_mob = PetitMob(self.fleur.center_x + offset_x, self.fleur.center_y + 200)
+        if self.timer_spawn >= 20.0:
+            # On les fait apparaître un peu loin et en hauteur pour voir la chute
+            spawn_x = self.fleur.center_x + random.choice([-500, 500])
+            nouveau_mob = PetitMob(spawn_x, self.fleur.center_y + 300)
+        
+            # AJOUT INDISPENSABLE POUR LA GRAVITÉ :
             self.tiroirs["ennemis"].append(nouveau_mob)
+
+
             self.timer_spawn = 0
 
-        # 2. Logique des mobs (IA et Dégâts)
         for mob in self.tiroirs["ennemis"]:
-            mob.logique_ia(self.fleur)
-        
-            # Vérification contact avec le joueur (0.5 coeur = 1 point de vie si 1 coeur = 2 points)
-            if arcade.check_for_collision(mob, self.fleur):
-                # On perd de la vie proportionnellement au temps (0.5 coeur par seconde)
-                self.fleur.vie -= 1 * delta_time 
-                if self.fleur.vie < 0: self.fleur.vie = 0
+            # 1. On vérifie si c'est un PetitMob pour lui donner son IA
+            if hasattr(mob, "logique_ia"):
+                mob.logique_ia(self.fleur)
+    
+            # 2. IMPORTANT : On demande au mob d'appliquer ses changements de position
+            mob.update() 
+    
+            # 3. Mise à jour de l'animation (pour qu'ils changent de frame)
+            mob.update_animation(delta_time)
+
     def on_draw(self):
         self.clear()
         

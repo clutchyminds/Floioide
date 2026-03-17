@@ -113,8 +113,11 @@ class InterfaceShop:
         # self.tex_croix = arcade.load_texture(os.path.join(chemin_pnj, "croix.png"))
 
         self.items_en_vente = [
-            {"nom": "Graine de vie", "prix": 10, "texture": arcade.load_texture(os.path.join(chemin_items, "test.png"))},
-            {"nom": "Engrais Turbo", "prix": 25, "texture": arcade.load_texture(os.path.join(chemin_items, "test.png"))}
+            {"nom": "grosse bouteille d'eau (+50%)", "prix": 50, "texture": arcade.load_texture(os.path.join(chemin_items, "eau.1.png"))},
+            {"nom": "moyenne bouteille d'eau (+25%)", "prix": 25, "texture": arcade.load_texture(os.path.join(chemin_items, "eau.2.png"))},
+            {"nom": "petite bouteille d'eau (+10%)", "prix": 10, "texture": arcade.load_texture(os.path.join(chemin_items, "eau.3.png"))},
+            {"nom": "grossepotion de soin (+3 coeurs)", "prix": 5, "texture": arcade.load_texture(os.path.join(chemin_items, "Heal.1.png"))},
+            {"nom": "petite potion de soin (+1 coeur)", "prix": 1, "texture": arcade.load_texture(os.path.join(chemin_items, "Heal.2.png"))},
         ]
 
     def update_souris(self, x, y):
