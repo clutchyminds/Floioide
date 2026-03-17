@@ -1,3 +1,4 @@
+from math import dist
 import random 
 import os
 import arcade
@@ -39,6 +40,9 @@ class EntiteAnimee(arcade.Sprite):
 class Joueur(EntiteAnimee):
     def __init__(self, x, y):
         super().__init__(x, y, taille=0.4)
+        self.en_attaque = False
+        self.cote_attaque = 1  # 1 pour droite, -1 pour gauche
+
         self.monnaie = 100
         self.eau = 100       # De 0 à 100
         self.energie = 0     # Commence à 0, monte à 100
@@ -137,6 +141,14 @@ class Joueur(EntiteAnimee):
                     self.width = -abs(self.width)
                 else:
                     self.width = abs(self.width)
+        if self.en_attaque:
+            # On utilise tes images d'attaque (ex: attaque1, attaque2...)
+            # Assure-toi d'avoir une liste self.textures_attaque chargée
+            self.texture = self.textures_attaque[self.frame_actuelle % len(self.textures_attaque)]
+        
+        # Gestion du miroir (Flip) selon la souris
+        if self.cote_attaque == -1:
+            self.texture = self.texture.flip_left_right()
 
     def escalader(self, liste_murs, direction_x):
         # On vérifie s'il y a un mur juste à côté de nous dans la direction où on avance
@@ -212,7 +224,7 @@ class Boss(EntiteAnimee):
             
             # Note : On ne touche JAMAIS à self.height ou self.scale ici 
             # pour éviter que le boss ne se retrouve la tête en bas.
-            
+
         def logique_ia(self, joueur):
             pass
 class PetitMob(EntiteAnimee):
@@ -237,24 +249,16 @@ class PetitMob(EntiteAnimee):
         super().update_animation(delta_time)
 
     def logique_ia(self, joueur):
-        # Appliquer la gravité (ils tombent s'ils sont en l'air)
-        # On compare avec le sol (Y = 100 par exemple, ou la position du joueur)
-        sol_y = 100 
-        if self.bottom > sol_y:
-            self.change_y = -4  # Vitesse de chute
-        else:
-            self.change_y = 0
-            self.bottom = sol_y
-
-        # Déplacement horizontal
+        # On calcule la distance
         distance = arcade.get_distance_between_sprites(self, joueur)
-        if distance < 300: # Si joueur proche
+        
+        if distance < 400:
             if self.center_x < joueur.center_x:
-                self.change_x = self.vitesse
+                self.change_x = 2 # Marche à droite
             else:
-                self.change_x = -self.vitesse
+                self.change_x = -2 # Marche à gauche
         else:
-            self.change_x = 0
+            self.change_x = 0 # S'arrête
 
 class PNJ(arcade.Sprite):
     def __init__(self, x, y):
@@ -299,3 +303,36 @@ class PNJ(arcade.Sprite):
                 color=arcade.color.WHITE,
                 border_width=3
             )
+
+class EffetAttaque(arcade.Sprite):
+    def __init__(self, x, y, direction, dossier_attaque):
+        super().__init__()
+        self.center_x = x + (40 * direction) # Décale l'attaque devant le joueur
+        self.center_y = y
+        self.scale = 1.0
+        
+        # Chargement des textures d'attaque
+        self.textures = []
+        for i in range(1, 6): # Suppose que tu as attaque1.png à attaque5.png
+            try:
+                tex = arcade.load_texture(os.path.join(dossier_attaque, f"attaque{i}.png"))
+                if direction == -1:
+                    tex = tex.flip_left_right()
+                self.textures.append(tex)
+            except:
+                pass
+        
+        if self.textures:
+            self.texture = self.textures[0]
+        self.frame = 0
+        self.timer = 0
+
+    def update_animation(self, delta_time=1/60):
+        self.timer += delta_time
+        if self.timer > 0.05: # Vitesse de l'attaque
+            self.timer = 0
+            self.frame += 1
+            if self.frame < len(self.textures):
+                self.texture = self.textures[self.frame]
+            else:
+                self.remove_from_sprite_lists() # Détruit l'attaque quand l'anim est finie

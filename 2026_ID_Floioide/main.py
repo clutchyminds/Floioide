@@ -4,7 +4,7 @@ import os
 from sources.constantes import *
 from sources.inputs import InputHandler
 from sources.logic import gerer_collisions
-from sources.entities import Joueur, Boss, PetitMob, PNJ
+from sources.entities import Joueur, Boss, PetitMob, PNJ, EffetAttaque
 from sources.interface import HUD, Chat, InterfaceShop
 
 class CinematiqueView(arcade.View):
@@ -17,7 +17,7 @@ class CinematiqueView(arcade.View):
         self.lecteur_musique = arcade.play_sound(self.musique_fond, volume=0.5, loop=True)
 
 
-        # Liste des 12 phrases pour l'histoire
+        #12 textes pour l'intro du jeu
         self.textes = [
             "texte 1",
             "texte 2",
@@ -39,7 +39,7 @@ class CinematiqueView(arcade.View):
         self.charger_scene()
 
     def charger_scene(self):
-        # construction du chemin vers les images 
+        #construction des chemin des images en alternance (animé) 
         chemin = os.path.join(DOSSIER_DATA, "intro")
         nom1 = f"image {self.scene_actuelle}.1.PNG"
         nom2 = f"image {self.scene_actuelle}.2.PNG"
@@ -52,7 +52,7 @@ class CinematiqueView(arcade.View):
         self.index_lettre = 0
 
     def on_update(self, delta_time):
-        # Animation : On alterne entre l'image .1 et .2 toutes les 0.5s
+        #animation de l'alternance entre les images .1 et .2
         self.timer_animation += delta_time
         if self.timer_animation > 0.5:
             self.texture_active = self.img2 if self.texture_active == self.img1 else self.img1
@@ -291,36 +291,33 @@ class MonJeu(arcade.View):
             pnj.est_survole = True
 
     def on_mouse_press(self, x, y, button, modifiers):
-        # On donne la priorité au shop s'il est ouvert
-        if self.shop.ouvert:
-            # On passe self.chat à la fonction
-            clic_utile = self.shop.check_achat(x, y, self.fleur, self.chat)
-            if clic_utile:
-                return # Si on a cliqué sur un bouton ou la croix, on s'arrête là
-        # --- 1. GESTION DU SHOP ---
-        if self.shop.ouvert:
-            # Si on clique sur la croix
-            if self.shop.croix_survolee:
-                self.shop.ouvert = False
-                return # On s'arrête là pour ne pas tirer ou cliquer derrière
-        
-            # Si on clique sur un bouton d'achat
-            # On récupère le résultat de l'achat pour le chat
-            resultat = self.shop.check_achat(x, y, self.fleur)
-            if resultat:
-                self.hud.ajouter_message(resultat) # On ajoute le message au chat
-            return
-
-        # --- 2. OUVERTURE DU SHOP (Logique PNJ existante) ---
-        for pnj in self.tiroirs["pnjs"]:
-            if pnj.est_survole:
-                self.shop.ouvert = True
-                self.chat.ajouter_message("Boutique ouverte.")
-                return
-
-
+        if button == arcade.MOUSE_BUTTON_LEFT:
+            souris_x_monde = x + self.camera_jeu.position[0]
+            
+            # On détermine de quel côté on attaque
+            if souris_x_monde < self.fleur.center_x:
+                direction = -1 # À gauche
+            else:
+                direction = 1  # À droite
+                
+            # On crée l'effet d'attaque et on l'ajoute à une liste dédiée
+            nouvelle_attaque = EffetAttaque(self.fleur.center_x, self.fleur.center_y, direction)
+            
+            # Si le tiroir n'existe pas encore, on le crée (sécurité)
+            if "attaques" not in self.tiroirs:
+                self.tiroirs["attaques"] = arcade.SpriteList()
+                
+            self.tiroirs["attaques"].append(nouvelle_attaque)
         
     def on_update(self, delta_time):
+        # Ajouter ceci pour faire défiler les frames de l'attaque
+        if "attaques" in self.tiroirs:
+            for attaque in self.tiroirs["attaques"]:
+                attaque.update_animation(delta_time)
+                # Optionnel : si tu veux que l'attaque suive le joueur pendant qu'il bouge
+                # attaque.center_x += self.fleur.change_x 
+                # attaque.center_y += self.fleur.change_y
+
         self.chat.update(delta_time)
 
         # 1. Calcul des FPS pour le menu F3
@@ -499,28 +496,38 @@ class MonJeu(arcade.View):
                 if self.fleur.energie > 100:
                     self.fleur.energie = 100
 
-        # 1. Spawn toutes les 20 secondes
-        self.timer_spawn += delta_time
-        if self.timer_spawn >= 20.0:
-            # On les fait apparaître un peu loin et en hauteur pour voir la chute
-            spawn_x = self.fleur.center_x + random.choice([-500, 500])
-            nouveau_mob = PetitMob(spawn_x, self.fleur.center_y + 300)
-        
-            # AJOUT INDISPENSABLE POUR LA GRAVITÉ :
-            self.tiroirs["ennemis"].append(nouveau_mob)
-
-
-            self.timer_spawn = 0
-
+        # --- BOUCLE DES ENNEMIS DANS main.py ---
         for mob in self.tiroirs["ennemis"]:
-            # 1. On vérifie si c'est un PetitMob pour lui donner son IA
+            # 1. IA : On décide de la direction (change_x)
             if hasattr(mob, "logique_ia"):
                 mob.logique_ia(self.fleur)
-    
-            # 2. IMPORTANT : On demande au mob d'appliquer ses changements de position
-            mob.update() 
-    
-            # 3. Mise à jour de l'animation (pour qu'ils changent de frame)
+
+            # 2. GRAVITÉ (Si pas sur le sol, on tombe)
+            # On simule la gravité en ajoutant du change_y
+            mob.change_y -= 0.5 # Valeur de gravité
+
+            # 3. DÉPLACEMENT (On applique les vitesses)
+            mob.center_x += mob.change_x
+            mob.center_y += mob.change_y
+
+            # 4. GESTION DES COLLISIONS "À LA MAIN" (Ton idée de Hitbox)
+            # On regarde si le mob touche une plateforme
+            hit_list = arcade.check_for_collision_with_list(mob, self.tiroirs["murs"])
+            
+            if hit_list:
+                for plateforme in hit_list:
+                    # SI ON TOMBE (On a percuté le haut de la plateforme)
+                    if mob.change_y < 0:
+                        # On le place juste au-dessus de la plateforme
+                        mob.bottom = plateforme.top
+                        mob.change_y = 0
+                    
+                    # SI ON EST "DANS" LA HITBOX (Sécurité pour ne pas s'enfoncer)
+                    elif mob.bottom < plateforme.top:
+                        mob.bottom = plateforme.top
+                        mob.change_y = 0
+
+            # 5. ANIMATION
             mob.update_animation(delta_time)
 
     def on_draw(self):
@@ -544,6 +551,10 @@ class MonJeu(arcade.View):
         
         # Les entités
         self.tiroirs["ennemis"].draw()
+
+        if "attaques" in self.tiroirs:
+            self.tiroirs["attaques"].draw()
+
         self.tiroirs["tirs"].draw()
         
         self.hud.dessiner_inventaire_et_monnaie(self.fleur)

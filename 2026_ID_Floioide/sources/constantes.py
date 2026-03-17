@@ -10,6 +10,7 @@ TITRE = "FLOIOIDE"
 CHEMIN_BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DOSSIER_DATA = os.path.join(CHEMIN_BASE, "data")
 DOSSIER_MAPS = os.path.join(DOSSIER_DATA, "maps")
+dossier_attaques = os.path.join(DOSSIER_DATA, "attaques")
 
 # --- RÉGLAGES DU JOUEUR ---
 VITESSE_MARCHE = 5
