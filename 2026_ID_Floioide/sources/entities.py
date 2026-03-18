@@ -1,4 +1,5 @@
 from math import dist
+import math
 import random 
 import os
 import arcade
@@ -305,34 +306,56 @@ class PNJ(arcade.Sprite):
             )
 
 class EffetAttaque(arcade.Sprite):
-    def __init__(self, x, y, direction, dossier_attaque):
+    def __init__(self, joueur_x, joueur_y, cible_x, cible_y, dossier_attaque):
         super().__init__()
-        self.center_x = x + (40 * direction) # Décale l'attaque devant le joueur
-        self.center_y = y
-        self.scale = 1.0
         
-        # Chargement des textures d'attaque
+        # --- CONFIGURATION ---
+        self.scale = 1.0
+        # Si ton image pointe vers le HAUT de base, mets -90
+        # Si ton image pointe vers la DROITE de base, mets 0
+        CORRECTION_ANGLE = 0 
+        
+        # 1. Calcul de l'angle vers la souris
+        diff_x = cible_x - joueur_x
+        diff_y = cible_y - joueur_y
+        angle_rad = math.atan2(diff_y, diff_x)
+        angle_deg = math.degrees(angle_rad)
+        
+        # 2. Positionnement
+        dist = 50 # Apparaît à 50 pixels du joueur
+        self.center_x = joueur_x + math.cos(angle_rad) * dist
+        self.center_y = joueur_y + math.sin(angle_rad) * dist
+        
+        # 3. Orientation et Flip
+        est_a_gauche = cible_x < joueur_x
+        
+        if est_a_gauche:
+            self.angle = angle_deg + 180 + CORRECTION_ANGLE
+        else:
+            self.angle = angle_deg + CORRECTION_ANGLE
+
+        # 4. Chargement des textures
         self.textures = []
-        for i in range(1, 6): # Suppose que tu as attaque1.png à attaque5.png
-            try:
-                tex = arcade.load_texture(os.path.join(dossier_attaque, f"attaque{i}.png"))
-                if direction == -1:
+        for i in range(1, 6):
+            nom_fichier = os.path.join(dossier_attaque, f"attaque{i}.png")
+            if os.path.exists(nom_fichier):
+                tex = arcade.load_texture(nom_fichier)
+                if est_a_gauche:
                     tex = tex.flip_left_right()
                 self.textures.append(tex)
-            except:
-                pass
         
         if self.textures:
             self.texture = self.textures[0]
+        
         self.frame = 0
         self.timer = 0
 
     def update_animation(self, delta_time=1/60):
         self.timer += delta_time
-        if self.timer > 0.05: # Vitesse de l'attaque
+        if self.timer > 0.05:
             self.timer = 0
             self.frame += 1
             if self.frame < len(self.textures):
                 self.texture = self.textures[self.frame]
             else:
-                self.remove_from_sprite_lists() # Détruit l'attaque quand l'anim est finie
+                self.remove_from_sprite_lists()

@@ -292,21 +292,34 @@ class MonJeu(arcade.View):
 
     def on_mouse_press(self, x, y, button, modifiers):
         if button == arcade.MOUSE_BUTTON_LEFT:
-            souris_x_monde = x + self.camera_jeu.position[0]
+            # IMPORTANT : Convertir le clic écran en coordonnées Monde
+            # Si tu n'as pas de camera de jeu, utilise juste x, y
+            # Si tu en as une, remplace 'self.camera' par son nom
+            try:
+                # Cette ligne est magique : elle trouve où tu as cliqué dans le niveau
+                pos_monde = self.camera_jeu.unproject((x, y)) 
+                mx, my = pos_monde[0], pos_monde[1]
+            except AttributeError:
+                mx, my = x, y
+
+            # 1. TEST PNJ (on utilise les coordonnées monde mx, my)
+            if "pnjs" in self.tiroirs:
+                for pnj in self.tiroirs["pnjs"]:
+                    if pnj.collides_with_point((mx, my)):
+                        self.chat.ajouter_message("PNJ : Bonjour !", arcade.color.YELLOW)
+                        return # On arrête tout, pas d'attaque
+
+            # 2. SI PAS DE PNJ, ON ATTAQUE
+            chemin_attaque = os.path.join(DOSSIER_DATA, "player", "attaque")
+            nouvelle_attaque = EffetAttaque(
+                self.fleur.center_x, 
+                self.fleur.center_y, 
+                mx, my, 
+                chemin_attaque
+            )
             
-            # On détermine de quel côté on attaque
-            if souris_x_monde < self.fleur.center_x:
-                direction = -1 # À gauche
-            else:
-                direction = 1  # À droite
-                
-            # On crée l'effet d'attaque et on l'ajoute à une liste dédiée
-            nouvelle_attaque = EffetAttaque(self.fleur.center_x, self.fleur.center_y, direction)
-            
-            # Si le tiroir n'existe pas encore, on le crée (sécurité)
             if "attaques" not in self.tiroirs:
                 self.tiroirs["attaques"] = arcade.SpriteList()
-                
             self.tiroirs["attaques"].append(nouvelle_attaque)
         
     def on_update(self, delta_time):
@@ -584,6 +597,12 @@ class MonJeu(arcade.View):
 
         self.tiroirs["joueur"].draw() # Dessine la plante via la liste (plus fiable)
 
+        # Dessine la plante via la liste (plus fiable)
+        self.tiroirs["joueur"].draw() 
+
+        if "attaques" in self.tiroirs:
+            self.tiroirs["attaques"].draw()
+
         # 3. On active la caméra de l'interface (HUD)
         self.camera_gui.use()
         self.hud.dessiner(self.fleur)
@@ -617,6 +636,7 @@ class MonJeu(arcade.View):
         self.chat.dessiner() # On dessine le chat par dessus tout
         self.shop.dessiner()
 
+        
 def main():
     window = arcade.Window(LARGEUR, HAUTEUR, TITRE)
     intro = CinematiqueView()
