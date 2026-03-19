@@ -19,18 +19,18 @@ class CinematiqueView(arcade.View):
 
         #12 textes pour l'intro du jeu
         self.textes = [
-            "texte 1",
-            "texte 2",
-            "texte 3",
-            "texte 4",
-            "texte 5",
-            "texte 6",
-            "texte 7",
-            "texte 8",
-            "texte 9",
-            "texte 10",
-            "texte 11",
-            "texte 12"
+            "J'ai toujours aimé la nature, les arbres et les fleurs",
+            "Mais mes paretns refusaient que j'aille courir ailleurs",
+            "Un jour, mes copains sont venus taper à ma fenêtre,",
+            "Pour m'emmener jouer dehors, là où tout pouvait naître.",
+            "Arrivés dans la forêt, on jouait à chat sans peur,",
+            "Je suis grimpé sur un puits pour montrer que j'étais le meilleur.",
+            "Mais j'ai ri trop fort,",
+            "et mon pied a glissé en douceur.",
+            "Je suis tmbé dans le puits, tout s'est éteint d'un coup.",
+            "Quand je me suis réveillé, mes jambes n'étaient plus du tout.",
+            "A la place, des pétales... Ma tête avait disparu.",
+            "Et dans le noir du puits, je suis devenu une fleur, perdue."
         ]
         
         self.texte_affiche = ""
