@@ -306,42 +306,37 @@ class PNJ(arcade.Sprite):
             )
 
 class EffetAttaque(arcade.Sprite):
-    def __init__(self, joueur_x, joueur_y, cible_x, cible_y, dossier_attaque):
+    def __init__(self, joueur_x, joueur_y, souris_x, dossier_attaque):
         super().__init__()
         
-        # --- CONFIGURATION ---
-        self.scale = 1.0
-        # Si ton image pointe vers le HAUT de base, mets -90
-        # Si ton image pointe vers la DROITE de base, mets 0
-        CORRECTION_ANGLE = 0 
+        # Pas d'inclinaison, l'attaque est droite !
+        self.angle = 0
+        self.scale = 1.0 # Modifie cette valeur (ex: 0.8) si l'attaque est trop grosse
         
-        # 1. Calcul de l'angle vers la souris
-        diff_x = cible_x - joueur_x
-        diff_y = cible_y - joueur_y
-        angle_rad = math.atan2(diff_y, diff_x)
-        angle_deg = math.degrees(angle_rad)
+        # 1. On regarde de quel côté est la souris par rapport au joueur
+        est_a_gauche = souris_x < joueur_x
         
-        # 2. Positionnement
-        dist = 50 # Apparaît à 50 pixels du joueur
-        self.center_x = joueur_x + math.cos(angle_rad) * dist
-        self.center_y = joueur_y + math.sin(angle_rad) * dist
-        
-        # 3. Orientation et Flip
-        est_a_gauche = cible_x < joueur_x
-        
+        # 2. Positionnement fixe à gauche ou à droite
+        distance = 60 # L'écart entre le joueur et l'attaque
         if est_a_gauche:
-            self.angle = angle_deg + 180 + CORRECTION_ANGLE
+            self.center_x = joueur_x - distance
         else:
-            self.angle = angle_deg + CORRECTION_ANGLE
-
-        # 4. Chargement des textures
+            self.center_x = joueur_x + distance
+            
+        # Hauteur : au même niveau que le joueur (ajuste le -10 si besoin)
+        self.center_y = joueur_y - 10 
+        
+        # 3. Chargement des images et Effet Miroir
         self.textures = []
         for i in range(1, 6):
             nom_fichier = os.path.join(dossier_attaque, f"attaque{i}.png")
             if os.path.exists(nom_fichier):
                 tex = arcade.load_texture(nom_fichier)
+                
+                # Si on attaque à gauche, on inverse simplement l'image (Miroir)
                 if est_a_gauche:
                     tex = tex.flip_left_right()
+                    
                 self.textures.append(tex)
         
         if self.textures:
@@ -349,10 +344,10 @@ class EffetAttaque(arcade.Sprite):
         
         self.frame = 0
         self.timer = 0
-
+        self.actif = False
     def update_animation(self, delta_time=1/60):
         self.timer += delta_time
-        if self.timer > 0.05:
+        if self.timer > 0.05: # Vitesse de l'animation
             self.timer = 0
             self.frame += 1
             if self.frame < len(self.textures):

@@ -119,7 +119,8 @@ class InterfaceShop:
             {"nom": "grossepotion de soin (+3 coeurs)", "prix": 5, "texture": arcade.load_texture(os.path.join(chemin_items, "Heal.1.png"))},
             {"nom": "petite potion de soin (+1 coeur)", "prix": 1, "texture": arcade.load_texture(os.path.join(chemin_items, "Heal.2.png"))},
         ]
-
+        self.actif = False
+        
     def update_souris(self, x, y):
         """Appelé depuis main.py pour mettre à jour les effets de survol"""
         if not self.ouvert:
@@ -141,6 +142,8 @@ class InterfaceShop:
             self.croix_survolee = True
 
     def dessiner(self):
+        if not self.actif:
+            return
         # On ne dessine rien si la boutique n'est pas ouverte
         if not self.ouvert:
             return
