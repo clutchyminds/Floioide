@@ -291,42 +291,31 @@ class MonJeu(arcade.View):
             pnj.est_survole = True
 
     def on_mouse_press(self, x, y, button, modifiers):
-        """
-        Gère les clics de souris : Boutique, Interaction PNJ et Attaque.
-        """
-        
         # --- 1. CONVERSION DES COORDONNÉES ---
-        # Important : 'x' et 'y' sont les positions sur l'ÉCRAN.
-        # Pour toucher un PNJ dans le jeu, il faut ajouter la position de la caméra.
-        world_x = x + self.camera_sprites.position.x
-        world_y = y + self.camera_sprites.position.y
+        # On remplace 'camera_sprites' par 'camera' (ou le nom que tu as mis dans setup)
+        world_x = x + self.camera.position.x
+        world_y = y + self.camera.position.y
 
         # --- 2. CLIC GAUCHE ---
         if button == arcade.MOUSE_BUTTON_LEFT:
             
-            # A. SÉCURITÉ BOUTIQUE : Si la boutique est DÉJÀ ouverte
-            # On utilise 'x' et 'y' car l'interface (HUD) ne bouge pas avec la caméra.
+            # A. SÉCURITÉ BOUTIQUE
             if hasattr(self, "shop") and self.shop.actif:
                 self.shop.on_mouse_press(x, y, button, modifiers, self.fleur, self.chat)
                 return 
 
-            # B. INTERACTION PNJ : Si on clique sur le PNJ
-            # On utilise 'world_x' et 'world_y' car le PNJ est dans le monde.
-            # Vérifie bien que ta liste dans setup s'appelle "pnjs"
+            # B. INTERACTION PNJ
             if "pnjs" in self.tiroirs:
                 for pnj in self.tiroirs["pnjs"]:
+                    # On utilise les coordonnées du monde pour le PNJ
                     if pnj.collides_with_point((world_x, world_y)):
                         self.chat.ajouter_message("Boutique ouverte !", arcade.color.YELLOW)
-                        
                         if hasattr(self, "shop"):
                             self.shop.actif = True 
-                        return # On arrête ici pour ne pas attaquer le PNJ
+                        return 
 
-            # C. ATTAQUE : Si on n'a pas cliqué sur un menu ou un PNJ
+            # C. ATTAQUE
             chemin_attaque = os.path.join(DOSSIER_DATA, "player", "attaque")
-            
-            # On crée l'attaque. 
-            # Note : On passe world_x pour que l'attaque sache vers où se diriger dans le niveau.
             nouvelle_attaque = EffetAttaque(
                 self.fleur.center_x, 
                 self.fleur.center_y, 
@@ -337,12 +326,6 @@ class MonJeu(arcade.View):
             if "attaques" not in self.tiroirs:
                 self.tiroirs["attaques"] = arcade.SpriteList()
             self.tiroirs["attaques"].append(nouvelle_attaque)
-
-        # --- 3. CLIC DROIT (Optionnel : pour fermer le shop) ---
-        elif button == arcade.MOUSE_BUTTON_RIGHT:
-            if hasattr(self, "shop") and self.shop.actif:
-                self.shop.actif = False
-                self.chat.ajouter_message("Boutique fermée", arcade.color.WHITE)
         
     def on_update(self, delta_time):
         # Ajouter ceci pour faire défiler les frames de l'attaque
