@@ -3,10 +3,10 @@ import math
 import random 
 import os
 import arcade
-from sources.constantes import DOSSIER_DATA, VITESSE_MARCHE
+from sources.constantes import DOSSIER_DATA, GRAVITE, TAILLE_TUILE, VITESSE_MARCHE
 
 class EntiteAnimee(arcade.Sprite):
-    def __init__(self, x, y, taille=1.0):
+    def __init__(self, x, y, taille=0.7):
         super().__init__()
         self.en_escalade = False
         self.center_x = x
@@ -18,6 +18,11 @@ class EntiteAnimee(arcade.Sprite):
         self.temps_ecoule = 0
         self.vitesse_animation = 0.15
         self.timer_dash = 0  # Temps restant avant le prochain dash
+
+        self.points_de_vie = 3
+        self.max_points_de_vie = 3
+        self.degats = 1
+        self.vitesse = 2
 
     def update_animation(self, delta_time=1/60):
         if not self.textures:
@@ -37,6 +42,14 @@ class EntiteAnimee(arcade.Sprite):
                 self.texture = nouvelle_texture.flip_left_right()
             else:
                 self.texture = nouvelle_texture
+    
+    def orienter_vers_joueur(self, joueur):
+        # Si le joueur est à droite, on flip la texture
+        if joueur.center_x > self.center_x:
+            self.flipped_horizontally = True
+        else:
+            self.flipped_horizontally = False
+
 
 class Joueur(EntiteAnimee):
     def __init__(self, x, y):
@@ -233,39 +246,289 @@ class Boss(EntiteAnimee):
 
         def logique_ia(self, joueur):
             pass
-class PetitMob(EntiteAnimee):
+class ProjectileEnnemi(arcade.Sprite):
+    def __init__(self, x, y, cible_x, cible_y, degats=1):
+        super().__init__(os.path.join(DOSSIER_DATA, "mobs", "projectile.png"), 0.5) # Ajuste le chemin
+        self.center_x = x
+        self.center_y = y
+        self.degats = degats
+        
+        # Calcul de la trajectoire
+        angle = math.atan2(cible_y - y, cible_x - x)
+        self.change_x = math.cos(angle) * 5
+        self.change_y = math.sin(angle) * 5
+        self.angle = math.degrees(angle)
+
+    def update(self, delta_time=1/60): 
+        self.center_x += self.change_x
+        self.center_y += self.change_y
+
+class Mob(EntiteAnimee):
+    def __init__(self, x, y, vie_max, volant, dossier_anim):
+        super().__init__(x, y)
+        self.vie_max = vie_max
+        self.points_de_vie = vie_max
+        self.volant = volant
+        self.temps_de_vie = 0
+        self.timer_attaque = 0
+        self.cible = None
+        
+        # Chargement automatique des textures du dossier
+        chemin = os.path.join(DOSSIER_DATA, "mobs", dossier_anim)
+        if os.path.exists(chemin):
+            for fichier in sorted(os.listdir(chemin)):
+                if fichier.endswith(".png"):
+                    self.textures.append(arcade.load_texture(os.path.join(chemin, fichier)))
+        if self.textures:
+            self.texture = self.textures[0]
+
+    def dessiner_barre_vie(self):
+        if self.points_de_vie < self.max_points_de_vie:
+            y_barre = self.top + 10
+            largeur = 40
+            hauteur = 5
+            
+            # Calcul du point de départ à gauche (Left) pour centrer la barre
+            x_gauche = self.center_x - largeur / 2
+
+            # Barre de fond (Rouge)
+            # LBWH = Left, Bottom, Width, Height
+            arcade.draw_rect_filled(
+                arcade.rect.LBWH(x_gauche, y_barre, largeur, hauteur),
+                arcade.color.RED
+            )
+            
+            # Barre de vie actuelle (Verte)
+            vie_ratio = max(0, self.points_de_vie / self.max_points_de_vie)
+            arcade.draw_rect_filled(
+                arcade.rect.LBWH(x_gauche, y_barre, largeur * vie_ratio, hauteur),
+                arcade.color.GREEN
+            )
+
+    def verifier_despawn(self, delta_time):
+        self.temps_de_vie += delta_time
+        if self.temps_de_vie >= 120.0: # 2 minutes
+            self.remove_from_sprite_lists()
+
+# ================= M롭게 FORET =================
+class MobForetAir(Mob):
     def __init__(self, x, y):
-        # On force la taille à 0.3 pour qu'ils ne soient pas géants
-        super().__init__(x, y, taille=0.3)
-        
-        chemin_mobs = os.path.join(DOSSIER_DATA, "mobs", "sol")
-        # Chargement des textures mob_sol.1.png à mob_sol.5.png
-        for i in range(1, 6):
-            tex = arcade.load_texture(os.path.join(chemin_mobs, f"mob_sol.{i}.png"))
-            self.textures.append(tex)
-        
-        self.texture = self.textures[0]
-        self.vitesse = 2
-        self.points_de_vie = 3
-        self.direction_balade = random.choice([-1, 1])
-        self.timer_balade = 0
+        super().__init__(x, y, vie_max=1, volant=True, dossier_anim="foret/air")
+        self.vitesse = 4
+        self.angle_cercle = 0
+        self.max_points_de_vie = 3
 
-    def update_animation(self, delta_time=1/60):
-        # Animation automatique des 5 frames
-        super().update_animation(delta_time)
-
-    def logique_ia(self, joueur):
-        # On calcule la distance
-        distance = arcade.get_distance_between_sprites(self, joueur)
+    def logique_ia(self, joueur, tirs_ennemis):
+        distance = math.dist((self.center_x, self.center_y), (joueur.center_x, joueur.center_y))
         
-        if distance < 400:
-            if self.center_x < joueur.center_x:
-                self.change_x = 2 # Marche à droite
+        # Orientation visuelle
+        self.flipped_horizontally = self.center_x > joueur.center_x
+
+        if distance <= 7 * TAILLE_TUILE:
+            if distance > 2 * TAILLE_TUILE:
+                # S'approche
+                angle = math.atan2(joueur.center_y - self.center_y, joueur.center_x - self.center_x)
+                self.change_x = math.cos(angle) * self.vitesse
+                self.change_y = math.sin(angle) * self.vitesse
             else:
-                self.change_x = -2 # Marche à gauche
+                self.change_x = 0
+                self.change_y = 0
+                
+            # Attaque
+            self.timer_attaque += 1/60
+            if self.timer_attaque >= 2.0:
+                tir = ProjectileEnnemi(self.center_x, self.center_y, joueur, degats=1, vitesse=5, image="foret/air/boule_bleue.png")
+                tirs_ennemis.append(tir)
+                self.timer_attaque = 0
         else:
-            self.change_x = 0 # S'arrête
+            # Cercle
+            self.angle_cercle += 0.05
+            self.change_x = math.cos(self.angle_cercle) * 2
+            self.change_y = math.sin(self.angle_cercle) * 2
 
+    def update_air(self, joueur):
+        hauteur_cible = joueur.center_y + 100 # Toujours 100px au-dessus
+
+        self.orienter_vers_joueur(self.joueur)
+        
+        if self.center_y < hauteur_cible:
+            self.change_y = 1.5 # Remonte doucement
+        else:
+            # Petit mouvement de flottaison sinus
+            self.change_y = math.sin(arcade.get_time_total()) * 0.5
+    
+        self.center_y += self.change_y
+
+class MobForetSol(Mob):
+    def __init__(self, x, y):
+        super().__init__(x, y, vie_max=4, volant=False, dossier_anim="foret/sol/gentil")
+        self.enerve = False
+        self.vitesse = 2
+        self.degats_contact = 0
+        self.max_points_de_vie = 3
+
+    def devenir_enerve(self):
+        if not self.enerve:
+            self.enerve = True
+            self.degats_contact = 4
+            self.textures.clear()
+            # Charger les textures énervées
+            chemin = os.path.join(DOSSIER_DATA, "mobs", "foret", "sol", "nrv")
+            if os.path.exists(chemin):
+                for f in sorted(os.listdir(chemin)):
+                    if f.endswith(".png"):
+                        self.textures.append(arcade.load_texture(os.path.join(chemin, f)))
+
+    def logique_ia(self, joueur, tirs_ennemis):
+        if self.points_de_vie < self.vie_max:
+            self.devenir_enerve()
+
+        if self.enerve:
+            # Dash vers le joueur
+            if self.center_x < joueur.center_x:
+                self.change_x = 6
+            else:
+                self.change_x = -6
+        else:
+            # Patrouille simple
+            self.timer_attaque += 1/60
+            if self.timer_attaque > 3.0:
+                self.change_x = random.choice([-2, 2])
+                self.timer_attaque = 0
+
+    def update_sol(self, liste_murs):
+        # 1. Gravité : descendre si on ne touche pas la hit-box
+        self.change_y -= 0.5 # Utilise la constante GRAVITE si définie
+        self.center_y += self.change_y
+        # 2. Test de collision avec le calque "hit-box" (liste_murs)
+        blocs_touches = arcade.check_for_collision_with_list(self, liste_murs)
+    
+        if blocs_touches:
+            for bloc in blocs_touches:
+                # Si on est "coincé" dans un bloc, TP vers le haut
+                if self.bottom < bloc.top and self.top > bloc.bottom:
+                    self.bottom = bloc.top
+                    self.change_y = 0
+
+# ================= MOBS DESERT =================
+class MobDesertAir(Mob):
+    def __init__(self, x, y, taille=1.2):
+        super().__init__(x, y, vie_max=2, volant=True, dossier_anim="desert/air", taille=taille)
+        self.degats_contact = 1
+        self.max_points_de_vie = 3
+
+    def logique_ia(self, joueur, tirs_ennemis):
+        distance = math.dist((self.center_x, self.center_y), (joueur.center_x, joueur.center_y))
+        if distance <= 10 * TAILLE_TUILE:
+            angle = math.atan2(joueur.center_y - self.center_y, joueur.center_x - self.center_x)
+            self.change_x = math.cos(angle) * 7 # Très rapide
+            self.change_y = math.sin(angle) * 7
+
+    def update_air(self, joueur):
+        hauteur_cible = joueur.center_y + 100 # Toujours 100px au-dessus
+    
+        if self.center_y < hauteur_cible:
+            self.change_y = 1.5 # Remonte doucement
+        else:
+            # Petit mouvement de flottaison sinus
+            self.change_y = math.sin(arcade.get_time_total()) * 0.5
+    
+        self.center_y += self.change_y
+
+class MobDesertSol(Mob):
+    def __init__(self, x, y):
+        super().__init__(x, y, vie_max=6, volant=False, dossier_anim="desert/sol")
+        self.degats_contact = 3
+
+    def logique_ia(self, joueur, tirs_ennemis):
+        distance = math.dist((self.center_x, self.center_y), (joueur.center_x, joueur.center_y))
+        if distance <= 5 * TAILLE_TUILE:
+            self.change_x = 1.5 if joueur.center_x > self.center_x else -1.5
+
+    def update_sol(self, liste_murs):
+        # 1. Gravité : descendre si on ne touche pas la hit-box
+        self.change_y -= 0.5 # Utilise la constante GRAVITE si définie
+        self.center_y += self.change_y
+        # 2. Test de collision avec le calque "hit-box" (liste_murs)
+        blocs_touches = arcade.check_for_collision_with_list(self, liste_murs)
+    
+        if blocs_touches:
+            for bloc in blocs_touches:
+                # Si on est "coincé" dans un bloc, TP vers le haut
+                if self.bottom < bloc.top and self.top > bloc.bottom:
+                    self.bottom = bloc.top
+                    self.change_y = 0
+
+# ================= MOBS VILLE =================
+class MobVilleAir(Mob):
+    def __init__(self, x, y):
+        super().__init__(x, y, vie_max=5, volant=True, dossier_anim="ville/air")
+        self.max_points_de_vie = 3
+
+    def logique_ia(self, joueur, tirs_ennemis):
+        distance = math.dist((self.center_x, self.center_y), (joueur.center_x, joueur.center_y))
+        if distance <= 14 * TAILLE_TUILE:
+            if distance > 5 * TAILLE_TUILE:
+                angle = math.atan2(joueur.center_y - self.center_y, joueur.center_x - self.center_x)
+                self.change_x = math.cos(angle) * 2
+                self.change_y = math.sin(angle) * 2
+            else:
+                self.change_x, self.change_y = 0, 0
+
+            self.timer_attaque += 1/60
+            if self.timer_attaque >= 2.0:
+                # Rafale de 3 balles
+                for i in range(-1, 2):
+                    tir = ProjectileEnnemi(self.center_x, self.center_y + (i*10), joueur, degats=2, vitesse=6, image="ville/air/balle_grise.png")
+                    tirs_ennemis.append(tir)
+                self.timer_attaque = 0
+
+    def update_air(self, joueur):
+        hauteur_cible = joueur.center_y + 100 # Toujours 100px au-dessus
+    
+        if self.center_y < hauteur_cible:
+            self.change_y = 1.5 # Remonte doucement
+        else:
+            # Petit mouvement de flottaison sinus
+            self.change_y = math.sin(arcade.get_time_total()) * 0.5
+    
+        self.center_y += self.change_y
+
+class MobVilleSol(Mob):
+    def __init__(self, x, y):
+        super().__init__(x, y, vie_max=2, volant=False, dossier_anim="ville/sol")
+        self.max_points_de_vie = 3
+
+    def logique_ia(self, joueur, tirs_ennemis):
+        distance = math.dist((self.center_x, self.center_y), (joueur.center_x, joueur.center_y))
+        if distance <= 15 * TAILLE_TUILE:
+            self.change_x = 0 # S'arrête
+            self.timer_attaque += 1/60
+            if self.timer_attaque >= 3.0:
+                tir = ProjectileEnnemi(self.center_x, self.center_y, joueur, degats=3, vitesse=4, image="ville/sol/grosse_balle.png", taille=2.0)
+                tirs_ennemis.append(tir)
+                self.timer_attaque = 0
+        else:
+            # Se déplace aléatoirement
+            self.timer_attaque += 1/60
+            if self.timer_attaque > 4.0:
+                self.change_x = random.choice([-1.5, 0, 1.5])
+                self.timer_attaque = 0
+        
+    def update_sol(self, liste_murs):
+        # 1. Gravité : descendre si on ne touche pas la hit-box
+        self.change_y -= 0.5 # Utilise la constante GRAVITE si définie
+        self.center_y += self.change_y
+        # 2. Test de collision avec le calque "hit-box" (liste_murs)
+        blocs_touches = arcade.check_for_collision_with_list(self, liste_murs)
+    
+        if blocs_touches:
+            for bloc in blocs_touches:
+                # Si on est "coincé" dans un bloc, TP vers le haut
+                if self.bottom < bloc.top and self.top > bloc.bottom:
+                    self.bottom = bloc.top
+                    self.change_y = 0
+        
 class PNJ(arcade.Sprite):
     def __init__(self, x, y):
         super().__init__(center_x=x, center_y=y, scale=0.5)
@@ -349,3 +612,27 @@ class EffetAttaque(arcade.Sprite):
                 self.texture = self.textures[self.frame]
             else:
                 self.remove_from_sprite_lists() # Fin de l'attaques
+
+class ProjectileEnnemi(arcade.Sprite):
+    def __init__(self, x, y, joueur, degats=1, vitesse=5, image="foret/air/boule_bleue.png"):
+        # On construit le chemin vers l'image
+        chemin_image = os.path.join(DOSSIER_DATA, "mobs", image)
+        super().__init__(chemin_image, scale=0.4)
+        
+        self.center_x = x
+        self.center_y = y
+        self.degats = degats
+        
+        # Calcul de l'angle vers le joueur
+        diff_x = joueur.center_x - x
+        diff_y = joueur.center_y - y
+        angle = math.atan2(diff_y, diff_x)
+        
+        # Application de la vitesse passée en argument
+        self.change_x = math.cos(angle) * vitesse
+        self.change_y = math.sin(angle) * vitesse
+
+    def update(self, delta_time: float = 1/60):
+        self.center_x += self.change_x
+        self.center_y += self.change_y
+        # Supprimer si hors écran (optionnel mais recommandé)
