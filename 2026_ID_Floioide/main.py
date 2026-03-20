@@ -6,6 +6,7 @@ from sources.inputs import InputHandler
 from sources.logic import gerer_collisions
 from sources.entities import Joueur, Boss, MobDesertAir, MobDesertSol, MobDesertSol, MobForetAir, MobForetSol, MobVilleAir, MobVilleSol, PNJ, EffetAttaque
 from sources.interface import HUD, Chat, InterfaceShop
+import math
 
 class CinematiqueView(arcade.View):
     def __init__(self):
@@ -116,7 +117,13 @@ class CinematiqueView(arcade.View):
 class MonJeu(arcade.View):
     def __init__(self):
         super().__init__()
-        
+
+        self.camera_sprites = arcade.camera.Camera2D()
+        self.camera_gui = arcade.camera.Camera2D()
+
+        self.tiroirs = {}
+        self.lecteur_musique = None
+
         # 1. Organisation des listes d'objets (SpriteLists)
         self.tiroirs = {
             "murs": arcade.SpriteList(),      # Sera ton "hit-box"
@@ -165,52 +172,51 @@ class MonJeu(arcade.View):
         
         # 1. Chargement de la Map Tiled
         m_path = os.path.join(DOSSIER_MAPS, "map.tmj")
+        
         try:
-            # IMPORTANT : On stocke dans self.tile_map pour que tout le monde y ait accès
+            # On charge la map
             self.tile_map = arcade.tilemap.load_tilemap(m_path, scaling=2.0)
             
             # --- RÉCUPÉRATION DES CALQUES ---
-            # Calque Physique
             self.tiroirs["murs"] = self.tile_map.sprite_lists.get("hit-box", arcade.SpriteList())
-            
-            # Calque Premier plan
             self.tiroirs["front"] = self.tile_map.sprite_lists.get("front", arcade.SpriteList())
-            
-            # Calque Arrière-plan
             self.tiroirs["background"] = self.tile_map.sprite_lists.get("back-ground", arcade.SpriteList())
-            
-            # Calque test (Visuel seulement)
             self.tiroirs["test"] = self.tile_map.sprite_lists.get("boss-test", arcade.SpriteList())
+            self.tiroirs["fontaines"] = self.tile_map.sprite_lists.get("fontaine", arcade.SpriteList())
 
-            self.tiroirs["pnjs"] = arcade.SpriteList()
-            mon_pnj = PNJ(x=790, y=2550)
-            self.tiroirs["pnjs"].append(mon_pnj)
-
-            self.tiroirs["tirs_ennemis"] = arcade.SpriteList()
-            self.timer_spawn_air = 0
-            self.timer_spawn_sol = 0
-
-            self.tiroirs["attaques"] = arcade.SpriteList()
-
-            # --- Logique de Spawn ---
-            spawn_x, spawn_y = 2026, 1700
-            if "Positions" in self.tile_map.object_lists:
-                for obj in self.tile_map.object_lists["Positions"]:
-                    if obj.name == "spawn_plante":
-                        spawn_x = obj.shape[0] * 2
-                        spawn_y = obj.shape[1] * 2
-                        break
-            
-            self.fleur = Joueur(spawn_x, spawn_y)
-            
         except Exception as e:
             print(f"Erreur chargement map : {e}")
-            self.fleur = Joueur(500, 500)
-            # On crée une map vide pour éviter que le reste du code plante
-            self.tile_map = arcade.TileMap() 
+            # Sécurité : on crée une map vide si le fichier est introuvable
+            self.tile_map = arcade.TileMap()
 
+        # --- INITIALISATION DES LISTES ET VARIABLES ---
+        self.tiroirs["pnjs"] = arcade.SpriteList()
+        mon_pnj = PNJ(x=790, y=2550)
+        self.tiroirs["pnjs"].append(mon_pnj)
+
+        self.tiroirs["tirs_ennemis"] = arcade.SpriteList()
+        self.tiroirs["attaques"] = arcade.SpriteList()
+        self.timer_spawn_air = 0
+        self.timer_spawn_sol = 0
+
+        # --- LOGIQUE DE SPAWN DU JOUEUR ---
+        # On définit les coordonnées
+        spawn_x, spawn_y = 2026, 1700
+        
+        # On crée l'objet Joueur AVANT de l'ajouter au tiroir
+        self.fleur = Joueur(2026, 1700)
+        
+        # On initialise le tiroir joueur s'il n'existe pas
+        self.tiroirs["joueur"] = arcade.SpriteList()
+        
+        # Maintenant on peut l'ajouter sans erreur car self.fleur n'est plus None
         self.tiroirs["joueur"].append(self.fleur)
-        self.tiroirs["fontaines"] = self.tile_map.sprite_lists.get("fontaine", arcade.SpriteList())
+
+        # --- MISE À JOUR DE LA CAMÉRA (Syntaxe Arcade 3.0) ---
+        if hasattr(self, 'camera_sprites'):
+            self.camera_sprites.position = (self.fleur.center_x, self.fleur.center_y)
+
+        self.fleur.position = (2026, 1700)
 
         # 2. Moteur Physique
         self.physique = arcade.PhysicsEnginePlatformer(
@@ -298,43 +304,36 @@ class MonJeu(arcade.View):
             pnj.est_survole = True
 
     def on_mouse_press(self, x, y, button, modifiers):
-        # On ajuste les coordonnées avec la caméra
-        poids_souris_x = x + self.camera_jeu.position.x
-        poids_souris_y = y + self.camera_jeu.position.y
-
-        if button == arcade.MOUSE_BUTTON_LEFT:
-            # 1. On vérifie le timer (1.0 seconde)
-            if self.fleur.dernier_coup_timer >= 1.0:
+        # --- CLIC DROIT : INTERACTION PNJ ---
+        if button == arcade.MOUSE_BUTTON_RIGHT:
+            # On convertit les coordonnées de l'écran en coordonnées du "monde"
+            x_monde = x + self.camera_jeu.position[0]
+            y_monde = y + self.camera_jeu.position[1]
             
-                # 2. On s'assure que la liste des attaques existe
-                if "attaques" not in self.tiroirs:
-                    self.tiroirs["attaques"] = arcade.SpriteList()
+            if "pnjs" in self.tiroirs:
+                pnj_clique = arcade.get_sprites_at_point((x_monde, y_monde), self.tiroirs["pnjs"])
+                if pnj_clique:
+                    distance = math.dist((self.fleur.center_x, self.fleur.center_y),
+                                         (pnj_clique[0].center_x, pnj_clique[0].center_y))
+                    if distance < 150:
+                        self.shop.actif = not self.shop.actif
+                    else:
+                        self.chat.ajouter_message("Le PNJ est trop loin !", couleur=arcade.color.RED)
 
-                # 3. On crée et on ajoute l'attaque
-                nouvelle_attaque = EffetAttaque(self.fleur, dossier_attaques)
-                self.tiroirs["attaques"].append(nouvelle_attaque)
+        # --- CLIC GAUCHE : ATTAQUE ---
+        elif button == arcade.MOUSE_BUTTON_LEFT:
+            if "attaques" not in self.tiroirs:
+                self.tiroirs["attaques"] = arcade.SpriteList()
             
-                # 4. On RESET le timer
-                self.fleur.dernier_coup_timer = 0
-            else:
-                print(f"Recharge... encore {1.0 - self.fleur.dernier_coup_timer:.1f}s")
-
-        elif button == arcade.MOUSE_BUTTON_RIGHT:
-            pnjs_touches = arcade.get_sprites_at_point(
-                (poids_souris_x, poids_souris_y), 
-                self.tiroirs["pnjs"]
-            )
-            if pnjs_touches:
-                self.shop.afficher(pnjs_touches[0])
+            # Assure-toi que dossier_attaques est bien importé depuis constantes.py
+            nouvelle_attaque = EffetAttaque(self.fleur, dossier_attaques)
+            self.tiroirs["attaques"].append(nouvelle_attaque)
 
     def on_update(self, delta_time):
         # Ajouter ceci pour faire défiler les frames de l'attaque
         if "attaques" in self.tiroirs:
-            for attaque in self.tiroirs["attaques"]:
-                attaque.update_animation(delta_time)
-                # Optionnel : si tu veux que l'attaque suive le joueur pendant qu'il bouge
-                # attaque.center_x += self.fleur.change_x 
-                # attaque.center_y += self.fleur.change_y
+            self.tiroirs["attaques"].update() # Appelle le update de EffetAttaque
+            self.tiroirs["attaques"].update_animation(delta_time)
 
         self.chat.update(delta_time)
 
@@ -460,21 +459,31 @@ class MonJeu(arcade.View):
         # On récupère la liste des ennemis qui touchent la fleur
         ennemis_proches = arcade.check_for_collision_with_list(self.fleur, self.tiroirs["ennemis"])
 
-        if ennemis_proches:
-            # Si 1 seconde (ou plus) s'est écoulée
-            if self.timer_degats >= 1.0:
-                self.fleur.vie -= 1    # -1 PV = -0.5 coeur
-                print(f"DEBUG: Vie actuelle = {self.fleur.vie}/20") # <--- AJOUTE ÇA
-                self.timer_degats = 0  # On reset le timer à ZERO
-                
-                # Feedback visuel : flash rouge
-                self.fleur.color = arcade.color.RED
-        else:
-            # Si on ne touche rien, on remet la couleur normale
-            # et on fait grimper le timer pour que le prochain coup soit instantané
-            self.fleur.color = arcade.color.WHITE
-            if self.timer_degats < 1.0:
-                self.timer_degats += delta_time
+        # --- MISE A JOUR DES ENNEMIS ET DE LEURS LOGIQUES ---
+        # Sécurité : créer la liste de projectiles si elle n'existe pas
+        if "projectiles_ennemis" not in self.tiroirs:
+            self.tiroirs["projectiles_ennemis"] = arcade.SpriteList()
+
+        for ennemi in self.tiroirs["ennemis"]:
+            # Les mobs terrestres
+            if hasattr(ennemi, "logique_sol"):
+                ennemi.logique_sol(self.tiroirs["murs"])
+            # Les mobs volants (C'EST ÇA QUI MANQUAIT)
+            elif hasattr(ennemi, "logique_air"):
+                ennemi.logique_air(self.fleur, self.tiroirs["projectiles_ennemis"])
+            
+            ennemi.orienter_vers_joueur(self.fleur)
+            ennemi.update_animation(delta_time)
+
+        # --- MISE A JOUR DES LISTES SECONDAIRES ---
+        if "projectiles_ennemis" in self.tiroirs:
+            self.tiroirs["projectiles_ennemis"].update()
+
+        if "attaques" in self.tiroirs:
+            self.tiroirs["attaques"].update()
+            for attaque in self.tiroirs["attaques"]:
+                if hasattr(attaque, "update_animation"):
+                    attaque.update_animation(delta_time)
 
         if self.fleur.vie <= 0:
             print("Game Over")
@@ -581,8 +590,7 @@ class MonJeu(arcade.View):
     def on_draw(self):
         self.clear()
         
-        if "tirs_ennemis" in self.tiroirs:
-            self.tiroirs["tirs_ennemis"].draw()
+        if "projectiles_ennemis" in self.tiroirs: self.tiroirs["projectiles_ennemis"].draw()
 
         # 1. On active la caméra du jeu
         self.camera_jeu.use()
@@ -645,28 +653,30 @@ class MonJeu(arcade.View):
         self.camera_gui.use()
         self.hud.dessiner(self.fleur)
 
+        # --- DEBUG F3 : DESSIN DES HITBOXES ---
         if self.show_debug:
-            # Petit fond semi-transparent pour la lisibilité
-            arcade.draw_rect_filled(
-                arcade.LBWH(10, HAUTEUR - 110, 300, 100),
-                (0, 0, 0, 150)
-            )
+            # Hitbox Joueur (Bleu)
+            self.fleur.draw_hit_box(arcade.color.BLUE, line_thickness=2)
             
-            # Texte des coordonnées et FPS
-            debug_text = (
-                f"FPS: {int(self.fps)}\n"
-                f"X: {int(self.fleur.center_x)} px\n"
-                f"Y: {int(self.fleur.center_y)} px"
-            )
-            
-            arcade.draw_text(
-                debug_text,
-                20, HAUTEUR - 100,
-                arcade.color.GREEN,
-                12,
-                multiline=True,
-                width=300
-            )
+            # Hitboxes Ennemis (Rouge)
+            for ennemi in self.tiroirs["ennemis"]:
+                ennemi.draw_hit_box(arcade.color.RED, line_thickness=1)
+                
+            # Hitbox Boss (Jaune)
+            if "boss" in self.tiroirs:
+                for b in self.tiroirs["boss"]:
+                    b.draw_hit_box(arcade.color.YELLOW, line_thickness=3)
+
+        # 2. Utilisation de la caméra d'interface (HUD)
+        self.camera_gui.use()
+        self.hud.dessiner(self.fleur)
+        
+        if self.show_debug:
+            # Infos texte
+            debug_txt = f"X: {int(self.fleur.center_x)} Y: {int(self.fleur.center_y)}\nFPS: {int(arcade.get_fps())}"
+            arcade.draw_text(debug_txt, 20, HAUTEUR - 60, arcade.color.GREEN, 12, multiline=True, width=400)
+
+
         self.shop.dessiner()
 
         self.camera_gui.use()
