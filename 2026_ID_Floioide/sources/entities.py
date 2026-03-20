@@ -63,10 +63,13 @@ class EntiteAnimee(arcade.Sprite):
 class Joueur(EntiteAnimee):
     def __init__(self, x, y):
         super().__init__(x, y)
-
         self.scale = 0.4
+        self.hit_box_algorithm = "None"
+        self.frame = 0          # L'index de l'image actuelle
+        self.timer_anim = 0     # Le chronomètre pour changer d'image
+        self.vitesse_anim = 0.1 # Temps en secondes entre chaque image
         taille_hb = 45 
-        self.hit_box = HitBox([(-50, -50), (50, -50), (50, 50), (-50, 50)])
+        self.hit_box_perso = HitBox([(-50, -50), (50, -50), (50, 50), (-50, 50)])
         self.temps_ecoule = 0        
         self.frame_actuelle = 0
         self.vitesse_animation = 0.15
@@ -135,60 +138,81 @@ class Joueur(EntiteAnimee):
             self.textures_attaque.append(tex)
 
     def update_animation(self, delta_time=1/60):
-        # --- 1. SÉCURITÉ : Si aucune texture n'est chargée, on arrête ---
+        # --- 1. CHOIX DE LA LISTE DE TEXTURES SELON L'ÉTAT ---
         if self.etat == "ATTAQUE":
             textures_a_utiliser = self.textures_attaque
-        elif self.en_dash:
+            vitesse = 0.05  # Animation plus rapide pour l'attaque
+        elif hasattr(self, "en_dash") and self.en_dash:
             textures_a_utiliser = self.anims_dash
-        elif self.en_escalade:
+            vitesse = self.vitesse_animation
+        elif hasattr(self, "en_escalade") and self.en_escalade:
             textures_a_utiliser = self.anims_escalade
+            vitesse = self.vitesse_animation
         elif abs(self.change_x) > 0.1:
             textures_a_utiliser = self.anims_marche
+            vitesse = self.vitesse_animation
         else:
-            # On utilise une liste contenant juste l'image IDLE
+            # On utilise une liste contenant juste l'image de repos
             textures_a_utiliser = [self.tex_idle]
+            vitesse = self.vitesse_animation
 
+        # Sécurité : si la liste est vide, on s'arrête pour éviter un crash
         if not textures_a_utiliser:
             return
 
-        # --- 2. GESTION DU TIMER ---
+        # --- 2. GESTION DU TIMER ET DE L'INDEX D'IMAGE ---
         self.temps_ecoule += delta_time
-        vitesse = 0.05 if self.etat == "ATTAQUE" else self.vitesse_animation
-
+        
         if self.temps_ecoule > vitesse:
             self.temps_ecoule = 0
             self.frame_actuelle += 1
 
-            # --- 3. LOGIQUE SELON L'ÉTAT ---
+            # Logique de fin d'animation pour l'attaque
             if self.etat == "ATTAQUE":
                 if self.frame_actuelle >= len(self.textures_attaque):
                     self.frame_actuelle = 0
-                    self.etat = "IDLE"  # On repasse en mode normal
-                else:
-                    self.texture = self.textures_attaque[self.frame_actuelle]
+                    self.etat = "IDLE"  # On repasse en mode normal après l'attaque
             else:
-                # Animation normale (IDLE/MARCHE)
+                # Boucle infinie pour les autres animations (marche/idle)
                 self.frame_actuelle %= len(textures_a_utiliser)
-                self.texture = textures_a_utiliser[self.frame_actuelle]
 
-        # --- 4. ORIENTATION (Flip / Rotation) ---
-        if self.etat == "ATTAQUE" and self.direction_attaque == "HAUT":
+        # --- 3. APPLICATION DE LA TEXTURE ---
+        # On récupère l'image dans la liste choisie
+        index = self.frame_actuelle % len(textures_a_utiliser)
+        nouvelle_texture = textures_a_utiliser[index]
+
+        # --- 4. GESTION DU MIROIR (FLIP) ET DE LA DIRECTION ---
+        # On regarde la souris (cote_attaque) ou la direction du mouvement (change_x)
+        direction_gauche = False
+        
+        if self.etat == "ATTAQUE":
+            if self.cote_attaque == -1:
+                direction_gauche = True
+        else:
+            if self.change_x < -0.1:
+                direction_gauche = True
+            elif self.change_x > 0.1:
+                direction_gauche = False
+            else:
+                # Si immobile, on garde la direction actuelle
+                direction_gauche = self.cote_attaque == -1
+
+        # Application du flip si nécessaire
+        if direction_gauche:
+            self.texture = nouvelle_texture.flip_left_right()
+        else:
+            self.texture = nouvelle_texture
+
+        # --- 5. ANGLES SPÉCIAUX (Attaque vers le haut) ---
+        if self.etat == "ATTAQUE" and hasattr(self, "direction_attaque") and self.direction_attaque == "HAUT":
             self.angle = 90
         else:
             self.angle = 0
-            if hasattr(self, "flipped_horizontally"):
-                if self.flipped_horizontally:
-                    self.width = -abs(self.width)
-                else:
-                    self.width = abs(self.width)
-        if self.en_attaque:
-            # On utilise tes images d'attaque (ex: attaque1, attaque2...)
-            # Assure-toi d'avoir une liste self.textures_attaque chargée
-            self.texture = self.textures_attaque[self.frame_actuelle % len(self.textures_attaque)]
-        
-        # Gestion du miroir (Flip) selon la souris
-        if self.cote_attaque == -1:
-            self.texture = self.texture.flip_left_right()
+
+        # --- 6. FIX DE LA HITBOX (CRUCIAL) ---
+        # On force la hitbox personnalisée à la toute fin pour qu'Arcade ne la change pas
+        if hasattr(self, "hit_box_perso"):
+            self.hit_box = self.hit_box_perso
 
     def escalader(self, liste_murs, direction_x):
         # On vérifie s'il y a un mur juste à côté de nous dans la direction où on avance
