@@ -4,33 +4,40 @@ import random
 import os
 import arcade
 from sources.constantes import DOSSIER_DATA, GRAVITE, TAILLE_TUILE, VITESSE_MARCHE
+from arcade.hitbox import HitBox
+
 
 class EntiteAnimee(arcade.Sprite):
-    def __init__(self, x, y, taille=1.0):
+    def __init__(self, x, y):
         super().__init__()
-        self.center_x = x
-        self.center_y = y
-        self.scale = taille
-        
-        # Variables d'animation (pour éviter le crash AttributeError)
-        self.textures = []
-        self.frame_actuelle = 0
-        self.temps_ecoule = 0
-        self.vitesse_animation = 0.15
-        
-        # Variables de mouvement
-        self.timer_dash = 0
-        self.change_x = 2 # Vitesse de patrouille
+        self.center_x = x  # <-- On définit x ici
+        self.center_y = y  # <-- On définit y ici
         self.x_depart = x
+        self.scale = 0.5
         self.distance_cible = random.randint(100, 300)
+        self.timer_tir = 0
+        self.points_de_vie = 2
+        self.change_x = 2
+
+        # Chargement correct des textures avec os.path.join
+        for i in range(1, 5): 
+            chemin = os.path.join(DOSSIER_DATA, "mobs", "foret", "air", f"mob{i}.png")
+            if os.path.exists(chemin):
+                self.textures.append(arcade.load_texture(chemin))
+        
+        if self.textures:
+            self.texture = self.textures[0]
+        else:
+            # Sécurité : Si l'image n'est pas trouvée, affiche un carré rouge au lieu d'être invisible
+            self.texture = arcade.make_soft_square_texture(50, arcade.color.RED, outer_alpha=255)
 
     def orienter_vers_joueur(self, joueur):
-        # Si tes mobs regardaient dans le mauvais sens, on inverse ici :
-        # Si le joueur est à droite, on ne flip pas (False), sinon on flip (True)
-        if joueur.center_x > self.center_x:
-            self.flipped_horizontally = False 
-        else:
+        # Si le mob va vers la droite (change_x positif), on inverse l'image
+        if self.change_x > 0:
             self.flipped_horizontally = True
+        # S'il va vers la gauche (change_x négatif), on la laisse normale
+        elif self.change_x < 0:
+            self.flipped_horizontally = False
 
     def logique_sol(self, liste_hitbox):
         # 1. Appliquer la gravité
@@ -52,10 +59,20 @@ class EntiteAnimee(arcade.Sprite):
             self.change_x *= -1
             self.x_depart = self.center_x
             self.distance_cible = random.randint(100, 400)
-            
+
 class Joueur(EntiteAnimee):
     def __init__(self, x, y):
-        super().__init__(x, y, taille=0.4)
+        super().__init__(x, y)
+
+        self.scale = 0.4
+        taille_hb = 45 
+        self.hit_box = HitBox([(-50, -50), (50, -50), (50, 50), (-50, 50)])
+        self.temps_ecoule = 0        
+        self.frame_actuelle = 0
+        self.vitesse_animation = 0.15
+        self.textures = []
+
+        self.scale = 0.4
 
         self.timer_dash = 0
 
@@ -188,8 +205,12 @@ class Boss(EntiteAnimee):
     def __init__(self, x, y):
         # On définit la taille désirée une seule fois ici (ex: 4.0)
         self.taille_fixe = 4.0 
-        super().__init__(x, y, taille=self.taille_fixe)
-        
+        super().__init__(x, y)
+
+        self.hit_box_perso = HitBox([(-100, -100), (100, -100), (100, 100), (-100, 100)])
+        self.hit_box =self.hit_box_perso
+        self.scale = 2.0  # Par exemple, pour un gros boss
+        self.points_de_vie = 50
         self.textures_attaque = []
         self.textures_pause = []
         
@@ -247,7 +268,8 @@ class Boss(EntiteAnimee):
             
             # Note : On ne touche JAMAIS à self.height ou self.scale ici 
             # pour éviter que le boss ne se retrouve la tête en bas.
-
+        self.hit_box = self.hit_box_perso
+        
         def logique_ia(self, joueur):
             pass
 class ProjectileEnnemi(arcade.Sprite):
@@ -317,10 +339,28 @@ class Mob(EntiteAnimee):
 # ================= M롭게 FORET =================
 class MobForetAir(Mob):
     def __init__(self, x, y):
-        super().__init__(x, y, vie_max=1, volant=True, dossier_anim="foret/air")
+        # On appelle le parent
+        super().__init__(x, y, vie_max=3, volant=True, dossier_anim="foret/air")
+    
+        self.textures = []
         self.vitesse = 4
         self.angle_cercle = 0
-        self.max_points_de_vie = 3
+        self.points_de_vie = 3 # Points de vie actuels
+    
+        # BOUCLE DE CHARGEMENT SÉCURISÉE
+        for i in range(1, 5):
+            # On construit le chemin propre
+            nom_fichier = f"libu{i}.png"
+            chemin = os.path.join(DOSSIER_DATA, "mobs", "foret", "air", nom_fichier)
+        
+            if os.path.exists(chemin):
+                self.textures.append(arcade.load_texture(chemin))
+            else:
+                print(f"Erreur : Image introuvable -> {chemin}")
+                # Texture de secours pour éviter le crash
+                self.textures.append(arcade.make_soft_square_texture(50, arcade.color.RED))
+
+        self.texture = self.textures[0]
 
     def logique_ia(self, joueur, tirs_ennemis):
         distance = math.dist((self.center_x, self.center_y), (joueur.center_x, joueur.center_y))
@@ -370,6 +410,11 @@ class MobForetSol(Mob):
         self.vitesse = 2
         self.degats_contact = 0
         self.max_points_de_vie = 3
+        self.textures = []
+        for i in range(0, 2):
+            path = os.path.join(DOSSIER_DATA, "mobs", "foret", "sol", "gentil", f"spi{i}.png")
+            if os.path.exists(path):
+                self.textures.append(arcade.load_texture(path))
 
     def devenir_enerve(self):
         if not self.enerve:
@@ -420,6 +465,11 @@ class MobDesertAir(Mob):
         super().__init__(x, y, vie_max=2, volant=True, dossier_anim="desert/air", taille=taille)
         self.degats_contact = 1
         self.max_points_de_vie = 3
+        self.textures = []
+        for i in range(0, 2):
+            path = os.path.join(DOSSIER_DATA, "mobs", "desert", "air", f"puce{i}.png")
+            if os.path.exists(path):
+                self.textures.append(arcade.load_texture(path))
 
     def logique_ia(self, joueur, tirs_ennemis):
         distance = math.dist((self.center_x, self.center_y), (joueur.center_x, joueur.center_y))
@@ -443,6 +493,11 @@ class MobDesertSol(Mob):
     def __init__(self, x, y):
         super().__init__(x, y, vie_max=6, volant=False, dossier_anim="desert/sol")
         self.degats_contact = 3
+        self.textures = []
+        for i in range(0, 2):
+            path = os.path.join(DOSSIER_DATA, "mobs", "desert", "sol", f"sable{i}.png")
+            if os.path.exists(path):
+                self.textures.append(arcade.load_texture(path))
 
     def logique_ia(self, joueur, tirs_ennemis):
         distance = math.dist((self.center_x, self.center_y), (joueur.center_x, joueur.center_y))
@@ -468,6 +523,11 @@ class MobVilleAir(Mob):
     def __init__(self, x, y):
         super().__init__(x, y, vie_max=5, volant=True, dossier_anim="ville/air")
         self.max_points_de_vie = 3
+        self.textures = []
+        for i in range(0, 2):
+            path = os.path.join(DOSSIER_DATA, "mobs", "ville", "air", f"drone{i}.png")
+            if os.path.exists(path):
+                self.textures.append(arcade.load_texture(path))
 
     def logique_ia(self, joueur, tirs_ennemis):
         distance = math.dist((self.center_x, self.center_y), (joueur.center_x, joueur.center_y))
@@ -502,6 +562,11 @@ class MobVilleSol(Mob):
     def __init__(self, x, y):
         super().__init__(x, y, vie_max=2, volant=False, dossier_anim="ville/sol")
         self.max_points_de_vie = 3
+        self.textures = []
+        for i in range(1, 6):
+            path = os.path.join(DOSSIER_DATA, "mobs", "ville", "sol", f"_sol.{i}.png")
+            if os.path.exists(path):
+                self.textures.append(arcade.load_texture(path))
 
     def logique_ia(self, joueur, tirs_ennemis):
         distance = math.dist((self.center_x, self.center_y), (joueur.center_x, joueur.center_y))
