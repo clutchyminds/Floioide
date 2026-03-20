@@ -6,54 +6,58 @@ import arcade
 from sources.constantes import DOSSIER_DATA, GRAVITE, TAILLE_TUILE, VITESSE_MARCHE
 
 class EntiteAnimee(arcade.Sprite):
-    def __init__(self, x, y, taille=0.7):
+    def __init__(self, x, y, taille=1.0):
         super().__init__()
-        self.en_escalade = False
         self.center_x = x
         self.center_y = y
-        self.en_escalade = False
         self.scale = taille
+        
+        # Variables d'animation (pour éviter le crash AttributeError)
         self.textures = []
         self.frame_actuelle = 0
         self.temps_ecoule = 0
         self.vitesse_animation = 0.15
-        self.timer_dash = 0  # Temps restant avant le prochain dash
+        
+        # Variables de mouvement
+        self.timer_dash = 0
+        self.change_x = 2 # Vitesse de patrouille
+        self.x_depart = x
+        self.distance_cible = random.randint(100, 300)
 
-        self.points_de_vie = 3
-        self.max_points_de_vie = 3
-        self.degats = 1
-        self.vitesse = 2
-
-    def update_animation(self, delta_time=1/60):
-        if not self.textures:
-            return
-            
-        self.temps_ecoule += delta_time
-        if self.temps_ecoule > self.vitesse_animation:
-            self.temps_ecoule = 0
-            self.frame_actuelle = (self.frame_actuelle + 1) % len(self.textures)
-            
-            # 1. On récupère la texture normale
-            nouvelle_texture = self.textures[self.frame_actuelle]
-            
-            # 2. On applique le flip si nécessaire
-            # hasattr vérifie si la variable existe pour éviter les bugs avec PetitMob
-            if hasattr(self, "flipped_horizontally") and self.flipped_horizontally:
-                self.texture = nouvelle_texture.flip_left_right()
-            else:
-                self.texture = nouvelle_texture
-    
     def orienter_vers_joueur(self, joueur):
-        # Si le joueur est à droite, on flip la texture
+        # Si tes mobs regardaient dans le mauvais sens, on inverse ici :
+        # Si le joueur est à droite, on ne flip pas (False), sinon on flip (True)
         if joueur.center_x > self.center_x:
-            self.flipped_horizontally = True
+            self.flipped_horizontally = False 
         else:
-            self.flipped_horizontally = False
+            self.flipped_horizontally = True
 
+    def logique_sol(self, liste_hitbox):
+        # 1. Appliquer la gravité
+        self.change_y -= GRAVITE
+        self.center_y += self.change_y
 
+        # 2. Collision sol + "Anti-blocage" (remonter si dans un bloc)
+        blocs_touches = arcade.check_for_collision_with_list(self, liste_hitbox)
+        if blocs_touches:
+            for bloc in blocs_touches:
+                # Si on tombe ou si on est déjà trop bas dans le bloc
+                if self.change_y < 0 or self.bottom < bloc.top:
+                    self.bottom = bloc.top # On se pose au-dessus
+                    self.change_y = 0
+        
+        # 3. Patrouille (Gauche à Droite)
+        self.center_x += self.change_x
+        if abs(self.center_x - self.x_depart) >= self.distance_cible:
+            self.change_x *= -1
+            self.x_depart = self.center_x
+            self.distance_cible = random.randint(100, 400)
+            
 class Joueur(EntiteAnimee):
     def __init__(self, x, y):
         super().__init__(x, y, taille=0.4)
+
+        self.timer_dash = 0
 
         self.flipped_horizontally = False
 

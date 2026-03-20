@@ -538,10 +538,17 @@ class MonJeu(arcade.View):
                 self.tiroirs["ennemis"].append(MobVilleSol(px + offset_x, py + 50))
             self.timer_spawn_sol = 0
 
-        # Mise à jour des entités ennemies
+        
+        # Dessiner les barres de vie au-dessus de chaque mob
         for ennemi in self.tiroirs["ennemis"]:
-            if hasattr(ennemi, "verifier_despawn"):
-                ennemi.verifier_despawn(delta_time)
+            # 1. Appliquer la gravité et patrouille
+            ennemi.logique_sol(self.tiroirs["murs"])
+    
+            # 2. Tourner le mob vers la plante (self.fleur)
+            ennemi.orienter_vers_joueur(self.fleur)
+    
+            # 3. Mettre à jour l'animation (marche)
+            ennemi.update_animation(delta_time)
         
             if hasattr(ennemi, "logique_ia"):
                 ennemi.logique_ia(self.fleur, self.tiroirs["tirs_ennemis"])
@@ -576,11 +583,6 @@ class MonJeu(arcade.View):
         
         if "tirs_ennemis" in self.tiroirs:
             self.tiroirs["tirs_ennemis"].draw()
-
-        # Dessiner les barres de vie au-dessus de chaque mob
-        for ennemi in self.tiroirs["ennemis"]:
-            if hasattr(ennemi, "dessiner_barre_vie"):
-                ennemi.dessiner_barre_vie()
 
         # 1. On active la caméra du jeu
         self.camera_jeu.use()
