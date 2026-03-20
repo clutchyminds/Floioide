@@ -10,11 +10,11 @@ TITRE = "FLOIOIDE"
 CHEMIN_BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DOSSIER_DATA = os.path.join(CHEMIN_BASE, "data")
 DOSSIER_MAPS = os.path.join(DOSSIER_DATA, "maps")
-dossier_attaques = os.path.join(DOSSIER_DATA, "attaques")
+dossier_attaques = os.path.join(DOSSIER_DATA, "player", "attaque")
 
 # --- RÉGLAGES DU JOUEUR ---
 VITESSE_MARCHE = 5
-VITESSE_DASH = 12
+VITESSE_DASH = 20
 VITESSE_SAUT = 12
 VITESSE_TIR = 10
 DISTANCE_MAX_TIR = 256
@@ -23,3 +23,8 @@ DISTANCE_MAX_TIR = 256
 DISTANCE_DETECTION = 320 # 5 tuiles de 64px
 VITESSE_MOB = 2
 GRAVITE = 0.5
+
+# --- AJOUTE CES LIGNES DANS constantes.py ---
+TAILLE_TUILE = 64
+MAX_MOBS_SOL = 5
+MAX_MOBS_AIR = 5

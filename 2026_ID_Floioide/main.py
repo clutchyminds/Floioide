@@ -4,7 +4,7 @@ import os
 from sources.constantes import *
 from sources.inputs import InputHandler
 from sources.logic import gerer_collisions
-from sources.entities import Joueur, Boss, PetitMob, PNJ, EffetAttaque
+from sources.entities import Joueur, Boss, MobDesertAir, MobDesertSol, MobDesertSol, MobForetAir, MobForetSol, MobVilleAir, MobVilleSol, PNJ, EffetAttaque
 from sources.interface import HUD, Chat, InterfaceShop
 
 class CinematiqueView(arcade.View):
@@ -185,6 +185,13 @@ class MonJeu(arcade.View):
             self.tiroirs["pnjs"] = arcade.SpriteList()
             mon_pnj = PNJ(x=790, y=2550)
             self.tiroirs["pnjs"].append(mon_pnj)
+
+            self.tiroirs["tirs_ennemis"] = arcade.SpriteList()
+            self.timer_spawn_air = 0
+            self.timer_spawn_sol = 0
+
+            self.tiroirs["attaques"] = arcade.SpriteList()
+
             # --- Logique de Spawn ---
             spawn_x, spawn_y = 2026, 1700
             if "Positions" in self.tile_map.object_lists:
@@ -291,42 +298,35 @@ class MonJeu(arcade.View):
             pnj.est_survole = True
 
     def on_mouse_press(self, x, y, button, modifiers):
-        # --- 1. CONVERSION DES COORDONNÉES ---
-        # On remplace 'camera_sprites' par 'camera' (ou le nom que tu as mis dans setup)
-        world_x = x + self.camera.position.x
-        world_y = y + self.camera.position.y
+        # On ajuste les coordonnées avec la caméra
+        poids_souris_x = x + self.camera_jeu.position.x
+        poids_souris_y = y + self.camera_jeu.position.y
 
-        # --- 2. CLIC GAUCHE ---
         if button == arcade.MOUSE_BUTTON_LEFT:
+            # 1. On vérifie le timer (1.0 seconde)
+            if self.fleur.dernier_coup_timer >= 1.0:
             
-            # A. SÉCURITÉ BOUTIQUE
-            if hasattr(self, "shop") and self.shop.actif:
-                self.shop.on_mouse_press(x, y, button, modifiers, self.fleur, self.chat)
-                return 
+                # 2. On s'assure que la liste des attaques existe
+                if "attaques" not in self.tiroirs:
+                    self.tiroirs["attaques"] = arcade.SpriteList()
 
-            # B. INTERACTION PNJ
-            if "pnjs" in self.tiroirs:
-                for pnj in self.tiroirs["pnjs"]:
-                    # On utilise les coordonnées du monde pour le PNJ
-                    if pnj.collides_with_point((world_x, world_y)):
-                        self.chat.ajouter_message("Boutique ouverte !", arcade.color.YELLOW)
-                        if hasattr(self, "shop"):
-                            self.shop.actif = True 
-                        return 
+                # 3. On crée et on ajoute l'attaque
+                nouvelle_attaque = EffetAttaque(self.fleur, dossier_attaques)
+                self.tiroirs["attaques"].append(nouvelle_attaque)
+            
+                # 4. On RESET le timer
+                self.fleur.dernier_coup_timer = 0
+            else:
+                print(f"Recharge... encore {1.0 - self.fleur.dernier_coup_timer:.1f}s")
 
-            # C. ATTAQUE
-            chemin_attaque = os.path.join(DOSSIER_DATA, "player", "attaque")
-            nouvelle_attaque = EffetAttaque(
-                self.fleur.center_x, 
-                self.fleur.center_y, 
-                world_x, 
-                chemin_attaque
+        elif button == arcade.MOUSE_BUTTON_RIGHT:
+            pnjs_touches = arcade.get_sprites_at_point(
+                (poids_souris_x, poids_souris_y), 
+                self.tiroirs["pnjs"]
             )
-            
-            if "attaques" not in self.tiroirs:
-                self.tiroirs["attaques"] = arcade.SpriteList()
-            self.tiroirs["attaques"].append(nouvelle_attaque)
-        
+            if pnjs_touches:
+                self.shop.afficher(pnjs_touches[0])
+
     def on_update(self, delta_time):
         # Ajouter ceci pour faire défiler les frames de l'attaque
         if "attaques" in self.tiroirs:
@@ -424,15 +424,7 @@ class MonJeu(arcade.View):
         self.camera_jeu.position = (self.fleur.center_x, self.fleur.center_y)
 
         # 7. LOGIQUE DE JEU (Collisions, Pluie, Ennemis)
-        gerer_collisions(self.tiroirs["tirs"], self.tiroirs["ennemis"])
-        
-        # Apparition des ennemis
-        self.temps_depuis_dernier_mob += delta_time
-        if self.temps_depuis_dernier_mob > 5.0:
-            offset = 400 if random.random() > 0.5 else -400
-            ennemi = PetitMob(self.fleur.center_x + offset, self.fleur.center_y + 100)
-            self.tiroirs["ennemis"].append(ennemi)
-            self.temps_depuis_dernier_mob = 0
+        gerer_collisions(self.tiroirs) 
 
         # 8. SONS DE PAS
         if abs(self.fleur.change_x) > 0.1 and self.physique.can_jump() and not est_en_train_de_dasher:
@@ -514,43 +506,84 @@ class MonJeu(arcade.View):
                 if self.fleur.energie > 100:
                     self.fleur.energie = 100
 
-        # --- BOUCLE DES ENNEMIS DANS main.py ---
-        for mob in self.tiroirs["ennemis"]:
-            # 1. IA : On décide de la direction (change_x)
-            if hasattr(mob, "logique_ia"):
-                mob.logique_ia(self.fleur)
+        # --- LOGIQUE DES MOBS ---
+        mobs_sol = sum(1 for e in self.tiroirs["ennemis"] if hasattr(e, "volant") and not e.volant)
+        mobs_air = sum(1 for e in self.tiroirs["ennemis"] if hasattr(e, "volant") and e.volant)
 
-            # 2. GRAVITÉ (Si pas sur le sol, on tombe)
-            # On simule la gravité en ajoutant du change_y
-            mob.change_y -= 0.5 # Valeur de gravité
+        self.timer_spawn_air += delta_time
+        self.timer_spawn_sol += delta_time
 
-            # 3. DÉPLACEMENT (On applique les vitesses)
-            mob.center_x += mob.change_x
-            mob.center_y += mob.change_y
+        px = self.fleur.center_x
+        py = self.fleur.center_y
 
-            # 4. GESTION DES COLLISIONS "À LA MAIN" (Ton idée de Hitbox)
-            # On regarde si le mob touche une plateforme
-            hit_list = arcade.check_for_collision_with_list(mob, self.tiroirs["murs"])
-            
-            if hit_list:
-                for plateforme in hit_list:
-                    # SI ON TOMBE (On a percuté le haut de la plateforme)
-                    if mob.change_y < 0:
-                        # On le place juste au-dessus de la plateforme
-                        mob.bottom = plateforme.top
-                        mob.change_y = 0
-                    
-                    # SI ON EST "DANS" LA HITBOX (Sécurité pour ne pas s'enfoncer)
-                    elif mob.bottom < plateforme.top:
-                        mob.bottom = plateforme.top
-                        mob.change_y = 0
+        # Spawn Air (toutes les 30s)
+        if self.timer_spawn_air > 30.0 and mobs_air < 5:
+            offset_x = random.choice([-400, 400])
+            if 0 <= px <= 8600:
+                self.tiroirs["ennemis"].append(MobForetAir(px + offset_x, py + 200))
+            elif 8600 < px <= 14000:
+                self.tiroirs["ennemis"].append(MobDesertAir(px + offset_x, py + 200))
+            else:
+                self.tiroirs["ennemis"].append(MobVilleAir(px + offset_x, py + 200))
+            self.timer_spawn_air = 0
 
-            # 5. ANIMATION
-            mob.update_animation(delta_time)
+        # Spawn Sol (toutes les 15s par exemple)
+        if self.timer_spawn_sol > 15.0 and mobs_sol < 5:
+            offset_x = random.choice([-500, 500])
+            if 0 <= px <= 8600:
+                self.tiroirs["ennemis"].append(MobForetSol(px + offset_x, py + 50))
+            elif 8600 < px <= 14000:
+                self.tiroirs["ennemis"].append(MobDesertSol(px + offset_x, py + 50))
+            else:
+                self.tiroirs["ennemis"].append(MobVilleSol(px + offset_x, py + 50))
+            self.timer_spawn_sol = 0
+
+        
+        # Dessiner les barres de vie au-dessus de chaque mob
+        for ennemi in self.tiroirs["ennemis"]:
+            # 1. Appliquer la gravité et patrouille
+            ennemi.logique_sol(self.tiroirs["murs"])
+    
+            # 2. Tourner le mob vers la plante (self.fleur)
+            ennemi.orienter_vers_joueur(self.fleur)
+    
+            # 3. Mettre à jour l'animation (marche)
+            ennemi.update_animation(delta_time)
+        
+            if hasattr(ennemi, "logique_ia"):
+                ennemi.logique_ia(self.fleur, self.tiroirs["tirs_ennemis"])
+        
+            # Collision corps à corps (Dégâts au joueur)
+            if hasattr(ennemi, "degats_contact") and ennemi.degats_contact > 0:
+                if arcade.check_for_collision(self.fleur, ennemi):
+                    if self.fleur.invulnerable_timer <= 0: # Si tu as implémenté une invulnérabilité
+                        self.fleur.vie -= ennemi.degats_contact
+                        self.fleur.invulnerable_timer = 1.0
+                
+            # On applique le mouvement
+            if not getattr(ennemi, "volant", False):
+                ennemi.change_y -= GRAVITE # Les mobs au sol subissent la gravité
+            ennemi.center_x += ennemi.change_x
+            ennemi.center_y += ennemi.change_y
+            ennemi.update_animation(delta_time)
+
+        # Mise à jour des projectiles ennemis
+        self.tiroirs["tirs_ennemis"].update()
+        for tir in self.tiroirs["tirs_ennemis"]:
+            if arcade.check_for_collision(tir, self.fleur):
+                if getattr(self.fleur, "invulnerable_timer", 0) <= 0:
+                    self.fleur.vie -= tir.degats
+                    self.fleur.invulnerable_timer = 1.0 # 1 seconde de pause avant le prochain coup
+                tir.remove_from_sprite_lists()
+
+                self.fleur.dernier_coup_timer += delta_time
 
     def on_draw(self):
         self.clear()
         
+        if "tirs_ennemis" in self.tiroirs:
+            self.tiroirs["tirs_ennemis"].draw()
+
         # 1. On active la caméra du jeu
         self.camera_jeu.use()
         
@@ -567,6 +600,9 @@ class MonJeu(arcade.View):
         # 2ème plan (Le sol / hit-box)
         self.tiroirs["murs"].draw()
         
+        if "fontaines" in self.tiroirs:
+            self.tiroirs["fontaines"].draw()
+            
         # Les entités
         self.tiroirs["ennemis"].draw()
 
@@ -584,8 +620,7 @@ class MonJeu(arcade.View):
         if "front" in self.tiroirs:
             self.tiroirs["front"].draw()
 
-        if "fontaines" in self.tiroirs:
-            self.tiroirs["fontaines"].draw()
+        
         
         # On dessine la liste des PNJs
         if "pnjs" in self.tiroirs:
@@ -602,8 +637,6 @@ class MonJeu(arcade.View):
 
         self.tiroirs["joueur"].draw() # Dessine la plante via la liste (plus fiable)
 
-        # Dessine la plante via la liste (plus fiable)
-        self.tiroirs["joueur"].draw() 
 
         if "attaques" in self.tiroirs:
             self.tiroirs["attaques"].draw()
