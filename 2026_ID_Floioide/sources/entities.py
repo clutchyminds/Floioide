@@ -3,226 +3,146 @@ import math
 import random 
 import os
 import arcade
-from sources.constantes import DOSSIER_DATA, GRAVITE, TAILLE_TUILE, VITESSE_MARCHE
+from sources.constantes import DOSSIER_DATA, DOSSIER_BOSS, GRAVITE, TAILLE_TUILE, VITESSE_MARCHE, VITESSE_DASH, VITESSE_SAUT, VITESSE_TIR, DISTANCE_MAX_TIR
 from arcade.hitbox import HitBox
 
 
 class EntiteAnimee(arcade.Sprite):
-    def __init__(self, x, y):
-        super().__init__()
-        self.center_x = x  # <-- On définit x ici
-        self.center_y = y  # <-- On définit y ici
-        self.x_depart = x
-        self.scale = 0.5
-        self.distance_cible = random.randint(100, 300)
-        self.timer_tir = 0
-        self.points_de_vie = 2
-        self.change_x = 2
-
-        # Chargement correct des textures avec os.path.join
-        for i in range(1, 5): 
-            chemin = os.path.join(DOSSIER_DATA, "mobs", "foret", "air", f"mob{i}.png")
-            if os.path.exists(chemin):
-                self.textures.append(arcade.load_texture(chemin))
+    def __init__(self, x, y, scale=1.0):
+        # appel du constructeur parent
+        super().__init__(scale=scale)
+        self.center_x = x
+        self.center_y = y
         
-        if self.textures:
-            self.texture = self.textures[0]
-        else:
-            # Sécurité : Si l'image n'est pas trouvée, affiche un carré rouge au lieu d'être invisible
-            self.texture = arcade.make_soft_square_texture(50, arcade.color.RED, outer_alpha=255)
-
-    def orienter_vers_joueur(self, joueur):
-        # Si le mob va vers la droite (change_x positif), on inverse l'image
-        if self.change_x > 0:
-            self.flipped_horizontally = True
-        # S'il va vers la gauche (change_x négatif), on la laisse normale
-        elif self.change_x < 0:
-            self.flipped_horizontally = False
-
-    def logique_sol(self, liste_hitbox):
-        # 1. Appliquer la gravité
-        self.change_y -= GRAVITE
-        self.center_y += self.change_y
-
-        # 2. Collision sol + "Anti-blocage" (remonter si dans un bloc)
-        blocs_touches = arcade.check_for_collision_with_list(self, liste_hitbox)
-        if blocs_touches:
-            for bloc in blocs_touches:
-                # Si on tombe ou si on est déjà trop bas dans le bloc
-                if self.change_y < 0 or self.bottom < bloc.top:
-                    self.bottom = bloc.top # On se pose au-dessus
-                    self.change_y = 0
+        # variables pour l'animation
+        self.frame_actuelle = 0
+        self.temps_ecoule = 0
+        self.vitesse_animation = 0.1
+        self.etat = "IDLE"
         
-        # 3. Patrouille (Gauche à Droite)
-        self.center_x += self.change_x
-        if abs(self.center_x - self.x_depart) >= self.distance_cible:
-            self.change_x *= -1
-            self.x_depart = self.center_x
-            self.distance_cible = random.randint(100, 400)
+        # stockage de la hitbox personnalisee
+        self.hit_box_perso = None
+        
+    def update_animation(self, delta_time=1/60):
+        # gestion du temps pour les images
+        self.temps_ecoule += delta_time
 
 class Joueur(EntiteAnimee):
     def __init__(self, x, y):
-        super().__init__(x, y)
-        self.scale = 0.4
-        self.hit_box_algorithm = "None"
-        self.frame = 0          # L'index de l'image actuelle
-        self.timer_anim = 0     # Le chronomètre pour changer d'image
-        self.vitesse_anim = 0.1 # Temps en secondes entre chaque image
-        taille_hb = 45 
-        self.hit_box_perso = HitBox([(-50, -50), (50, -50), (50, 50), (-50, 50)])
-        self.temps_ecoule = 0        
-        self.frame_actuelle = 0
-        self.vitesse_animation = 0.15
-        self.textures = []
+        self.flip_left_right = False
 
-        self.scale = 0.4
 
-        self.timer_dash = 0
+        # --- SYSTÈME D'INVENTAIRE (4 CASES) ---
+        self.inventaire = [None, None, None, None] # 4 emplacements vides
+        self.index_inventaire = 0
 
-        self.flipped_horizontally = False
+        # initialisation avec scale 0.4
+        super().__init__(x, y, scale=0.4)
+        
+        # dossiers des images
+        doss_p = os.path.join(DOSSIER_DATA, "player")
+        doss_m = os.path.join(doss_p, "mouvements")
+        
+        # 1. chargement des textures de base
+        self.tex_idle = arcade.load_texture(os.path.join(doss_p, "player.png"))
+        self.tex_saut = arcade.load_texture(os.path.join(doss_m, "saut.png"))
+        self.tex_dash = arcade.load_texture(os.path.join(doss_m, "Dash.png"))
+        
+        # animations de marche (1 a 4)
+        self.anims_marche = []
+        for i in range(1, 5):
+            self.anims_marche.append(arcade.load_texture(os.path.join(doss_m, f"avancer ({i}).png")))
+            
+        # animations de grimper (1 a 3)
+        self.anims_grimper = []
+        for i in range(1, 4):
+            self.anims_grimper.append(arcade.load_texture(os.path.join(doss_m, f"grimper ({i}).png")))
 
-        self.dernier_coup_timer = 0
+        # animations d attaque (1 a 12)
+        self.textures_attaque = []
+        for i in range(1, 13):
+            self.textures_attaque.append(arcade.load_texture(os.path.join(doss_p, "attaque", f"attaque{i}.png")))
 
-        self.en_attaque = False
-        self.cote_attaque = 1  # 1 pour droite, -1 pour gauche
-
-        self.monnaie = 100
-        self.eau = 100       # De 0 à 100
-        self.energie = 0     # Commence à 0, monte à 100
+        
+        
+        # 2. variables de statistiques (noms corriges pour main.py)
+        self.vie = 20              # utilise "vie" au lieu de "pv"
+        self.eau = 100
+        self.nrj_dash = 100
+        self.monnaie = 0
+        
+        self.energie = 100
+        self.timer_dash = 0        
+        self.timer_attaque = 0
+        self.timer_recup_eau = 0
         self.timer_energie = 0
-
-        self.en_escalade = False
+        
+        # etats pour l animation
+        self.face_gauche = False
         self.en_dash = False
-
-        self.vie_max = 20
-        self.vie = 20
+        self.en_escalade = False
+        self.au_sol = False
         
-        self.inventaire = [None] * 5  # 5 slots vides
-
-        # 1. Chargement de l'image de base (Idle)
-        # Chemin selon l'image : data/player/player.png
-        self.tex_idle = arcade.load_texture(os.path.join(DOSSIER_DATA, "player", "player.png"))        
-        # 2. Chargement des animations (Toutes dans data/player/mouvements)
-        # Définir le chemin vers ton dossier regroupé
-        chemin_mouvements = os.path.join(DOSSIER_DATA, "player", "mouvements")
-
-        # Lister tous les fichiers présents dans ce dossier
-        tous_les_fichiers = sorted(os.listdir(chemin_mouvements))
-
-        # Fonction pour extraire les images selon le début de leur nom
-        def charger_liste(prefixe):
-            liste = []
-            for f in tous_les_fichiers:
-                if f.startswith(prefixe) and f.endswith(".png"):
-                    liste.append(arcade.load_texture(os.path.join(chemin_mouvements, f)))
-            return liste
-
-        # Assigner les animations en fonction des noms visibles sur ta capture
-        self.anims_marche = charger_liste("avancer")   # Charge avancer (1).png, etc.
-        self.anims_dash = charger_liste("Dash")        # Charge Dash.png
-        self.anims_escalade = charger_liste("grimper") # Charge grimper (1).png, etc.
-
-        self.texture = self.tex_idle
-
-        self.etat = "IDLE"
-        self.textures_attaque = []
-        # --- CHARGEMENT DES ATTAQUES ---
-        self.textures_attaque = []
-        chemin_attaque = os.path.join(DOSSIER_DATA, "player", "attaque")
-        
-        # Remplace "1, 6" selon le nombre de frames que tu as. 
-        # (Ici ça chargera attaque1.png jusqu'à attaque5.png)
-        for i in range(1, 13): 
-            nom_fichier = f"attaque{i}.png" # <-- Mets le bon nom ici
-            tex = arcade.load_texture(os.path.join(chemin_attaque, nom_fichier))
-            self.textures_attaque.append(tex)
+        # 3. hitbox fixe obligatoire pour arcade 3.0
+        self.hit_box_algorithm = "None"
+        t = 45 
+        self.hit_box_perso = HitBox([(-t, -t), (t, -t), (t, t), (-t, t)])
+        self.hit_box = self.hit_box_perso
 
     def update_animation(self, delta_time=1/60):
-        # --- 1. CHOIX DE LA LISTE DE TEXTURES SELON L'ÉTAT ---
-        if self.etat == "ATTAQUE":
-            textures_a_utiliser = self.textures_attaque
-            vitesse = 0.05  # Animation plus rapide pour l'attaque
-        elif hasattr(self, "en_dash") and self.en_dash:
-            textures_a_utiliser = self.anims_dash
-            vitesse = self.vitesse_animation
-        elif hasattr(self, "en_escalade") and self.en_escalade:
-            textures_a_utiliser = self.anims_escalade
-            vitesse = self.vitesse_animation
-        elif abs(self.change_x) > 0.1:
-            textures_a_utiliser = self.anims_marche
-            vitesse = self.vitesse_animation
-        else:
-            # On utilise une liste contenant juste l'image de repos
-            textures_a_utiliser = [self.tex_idle]
-            vitesse = self.vitesse_animation
-
-        # Sécurité : si la liste est vide, on s'arrête pour éviter un crash
-        if not textures_a_utiliser:
-            return
-
-        # --- 2. GESTION DU TIMER ET DE L'INDEX D'IMAGE ---
+        # calcul du temps pour changer d image
         self.temps_ecoule += delta_time
         
-        if self.temps_ecoule > vitesse:
+        # choix de la liste d images
+        textures_a_voir = [self.tex_idle]
+        vit = self.vitesse_animation
+
+        if self.change_x < 0:
+            self.flip_left_right = True  # Regarde à gauche
+        elif self.change_x > 0:
+            self.flip_left_right = False # Regarde à droite
+
+        # logic de selection des images
+        if self.etat == "ATTAQUE":
+            textures_a_voir = self.textures_attaque
+            vit = 0.05
+        elif self.en_dash:
+            textures_a_voir = [self.tex_dash]
+        elif self.en_escalade:
+            textures_a_voir = self.anims_grimper
+        # si change_y est different de 0, on considere qu'on saute (securite)
+        elif abs(self.change_y) > 0.1: 
+            textures_a_voir = [self.tex_saut]
+        elif abs(self.change_x) > 0.1:
+            textures_a_voir = self.anims_marche
+        else:
+            textures_a_voir = [self.tex_idle]
+
+        # changement d image si le temps est ecoule
+        if self.temps_ecoule > vit:
             self.temps_ecoule = 0
             self.frame_actuelle += 1
+            
+            # remise a zero si fin de liste
+            if self.frame_actuelle >= len(textures_a_voir):
+                self.frame_actuelle = 0
+                if self.etat == "ATTAQUE":
+                    self.etat = "IDLE"
 
-            # Logique de fin d'animation pour l'attaque
-            if self.etat == "ATTAQUE":
-                if self.frame_actuelle >= len(self.textures_attaque):
-                    self.frame_actuelle = 0
-                    self.etat = "IDLE"  # On repasse en mode normal après l'attaque
+            # selection de la texture
+            base = textures_a_voir[self.frame_actuelle]
+            
+            # gestion du sens (gauche ou droite)
+            if self.change_x < -0.1: self.face_gauche = True
+            elif self.change_x > 0.1: self.face_gauche = False
+            
+            if self.face_gauche:
+                self.texture = base.flip_left_right()
             else:
-                # Boucle infinie pour les autres animations (marche/idle)
-                self.frame_actuelle %= len(textures_a_utiliser)
+                self.texture = base
 
-        # --- 3. APPLICATION DE LA TEXTURE ---
-        # On récupère l'image dans la liste choisie
-        index = self.frame_actuelle % len(textures_a_utiliser)
-        nouvelle_texture = textures_a_utiliser[index]
-
-        # --- 4. GESTION DU MIROIR (FLIP) ET DE LA DIRECTION ---
-        # On regarde la souris (cote_attaque) ou la direction du mouvement (change_x)
-        direction_gauche = False
-        
-        if self.etat == "ATTAQUE":
-            if self.cote_attaque == -1:
-                direction_gauche = True
-        else:
-            if self.change_x < -0.1:
-                direction_gauche = True
-            elif self.change_x > 0.1:
-                direction_gauche = False
-            else:
-                # Si immobile, on garde la direction actuelle
-                direction_gauche = self.cote_attaque == -1
-
-        # Application du flip si nécessaire
-        if direction_gauche:
-            self.texture = nouvelle_texture.flip_left_right()
-        else:
-            self.texture = nouvelle_texture
-
-        # --- 5. ANGLES SPÉCIAUX (Attaque vers le haut) ---
-        if self.etat == "ATTAQUE" and hasattr(self, "direction_attaque") and self.direction_attaque == "HAUT":
-            self.angle = 90
-        else:
-            self.angle = 0
-
-        # --- 6. FIX DE LA HITBOX (CRUCIAL) ---
-        # On force la hitbox personnalisée à la toute fin pour qu'Arcade ne la change pas
-        if hasattr(self, "hit_box_perso"):
-            self.hit_box = self.hit_box_perso
-
-    def escalader(self, liste_murs, direction_x):
-        # On vérifie s'il y a un mur juste à côté de nous dans la direction où on avance
-        mur_touche = arcade.check_for_collision_with_list(self, liste_murs)
-        
-        if mur_touche and direction_x != 0:
-            self.en_escalade = True
-            self.change_y = VITESSE_MARCHE # On monte à la même vitesse qu'on marche
-        else:
-            self.en_escalade = False
+        # securite pour garder la meme hitbox
+        self.hit_box = self.hit_box_perso
 
 
 class Boss(EntiteAnimee):
@@ -313,315 +233,71 @@ class ProjectileEnnemi(arcade.Sprite):
         self.center_x += self.change_x
         self.center_y += self.change_y
 
-class Mob(EntiteAnimee):
-    def __init__(self, x, y, vie_max, volant, dossier_anim):
-        super().__init__(x, y)
-        self.vie_max = vie_max
-        self.points_de_vie = vie_max
-        self.volant = volant
-        self.temps_de_vie = 0
-        self.timer_attaque = 0
-        self.cible = None
+class Ennemi(EntiteAnimee):
+    def __init__(self, x, y, dossier, nb_anim=4):
+        super().__init__(x, y, scale=0.5)
         
-        # Chargement automatique des textures du dossier
-        chemin = os.path.join(DOSSIER_DATA, "mobs", dossier_anim)
-        if os.path.exists(chemin):
-            for fichier in sorted(os.listdir(chemin)):
-                if fichier.endswith(".png"):
-                    self.textures.append(arcade.load_texture(os.path.join(chemin, fichier)))
-        if self.textures:
-            self.texture = self.textures[0]
-
-    def dessiner_barre_vie(self):
-        if self.points_de_vie < self.max_points_de_vie:
-            y_barre = self.top + 10
-            largeur = 40
-            hauteur = 5
-            
-            # Calcul du point de départ à gauche (Left) pour centrer la barre
-            x_gauche = self.center_x - largeur / 2
-
-            # Barre de fond (Rouge)
-            # LBWH = Left, Bottom, Width, Height
-            arcade.draw_rect_filled(
-                arcade.rect.LBWH(x_gauche, y_barre, largeur, hauteur),
-                arcade.color.RED
-            )
-            
-            # Barre de vie actuelle (Verte)
-            vie_ratio = max(0, self.points_de_vie / self.max_points_de_vie)
-            arcade.draw_rect_filled(
-                arcade.rect.LBWH(x_gauche, y_barre, largeur * vie_ratio, hauteur),
-                arcade.color.GREEN
-            )
-
-    def verifier_despawn(self, delta_time):
-        self.temps_de_vie += delta_time
-        if self.temps_de_vie >= 120.0: # 2 minutes
-            self.remove_from_sprite_lists()
-
-# ================= M롭게 FORET =================
-class MobForetAir(Mob):
-    def __init__(self, x, y):
-        # On appelle le parent
-        super().__init__(x, y, vie_max=3, volant=True, dossier_anim="foret/air")
-    
-        self.textures = []
-        self.vitesse = 4
-        self.angle_cercle = 0
-        self.points_de_vie = 3 # Points de vie actuels
-    
-        # BOUCLE DE CHARGEMENT SÉCURISÉE
-        for i in range(1, 5):
-            # On construit le chemin propre
-            nom_fichier = f"libu{i}.png"
-            chemin = os.path.join(DOSSIER_DATA, "mobs", "foret", "air", nom_fichier)
-        
+        # chargement automatique des textures
+        self.textures_marche = []
+        for i in range(1, nb_anim + 1):
+            chemin = os.path.join(DOSSIER_DATA, "mobs", dossier, f"mob{i}.png")
             if os.path.exists(chemin):
-                self.textures.append(arcade.load_texture(chemin))
-            else:
-                print(f"Erreur : Image introuvable -> {chemin}")
-                # Texture de secours pour éviter le crash
-                self.textures.append(arcade.make_soft_square_texture(50, arcade.color.RED))
-
-        self.texture = self.textures[0]
-
-    def logique_ia(self, joueur, tirs_ennemis):
-        distance = math.dist((self.center_x, self.center_y), (joueur.center_x, joueur.center_y))
+                self.textures_marche.append(arcade.load_texture(chemin))
         
-        # Orientation visuelle
-        self.flipped_horizontally = self.center_x > joueur.center_x
+        if self.textures_marche:
+            self.texture = self.textures_marche[0]
 
-        if distance <= 7 * TAILLE_TUILE:
-            if distance > 2 * TAILLE_TUILE:
-                # S'approche
-                angle = math.atan2(joueur.center_y - self.center_y, joueur.center_x - self.center_x)
-                self.change_x = math.cos(angle) * self.vitesse
-                self.change_y = math.sin(angle) * self.vitesse
-            else:
-                self.change_x = 0
-                self.change_y = 0
-                
-            # Attaque
-            self.timer_attaque += 1/60
-            if self.timer_attaque >= 2.0:
-                tir = ProjectileEnnemi(self.center_x, self.center_y, joueur, degats=1, vitesse=5, image="foret/air/boule_bleue.png")
-                tirs_ennemis.append(tir)
-                self.timer_attaque = 0
-        else:
-            # Cercle
-            self.angle_cercle += 0.05
-            self.change_x = math.cos(self.angle_cercle) * 2
-            self.change_y = math.sin(self.angle_cercle) * 2
-
-    def update_air(self, joueur):
-        hauteur_cible = joueur.center_y + 100 # Toujours 100px au-dessus
-
-        self.orienter_vers_joueur(self.joueur)
-        
-        if self.center_y < hauteur_cible:
-            self.change_y = 1.5 # Remonte doucement
-        else:
-            # Petit mouvement de flottaison sinus
-            self.change_y = math.sin(arcade.get_time_total()) * 0.5
-    
-        self.center_y += self.change_y
-
-class MobForetSol(Mob):
-    def __init__(self, x, y):
-        super().__init__(x, y, vie_max=4, volant=False, dossier_anim="foret/sol/gentil")
-        self.enerve = False
+        # stats de base
+        self.vie = 2
         self.vitesse = 2
-        self.degats_contact = 0
-        self.max_points_de_vie = 3
-        self.textures = []
-        for i in range(0, 2):
-            path = os.path.join(DOSSIER_DATA, "mobs", "foret", "sol", "gentil", f"spi{i}.png")
-            if os.path.exists(path):
-                self.textures.append(arcade.load_texture(path))
-
-    def devenir_enerve(self):
-        if not self.enerve:
-            self.enerve = True
-            self.degats_contact = 4
-            self.textures.clear()
-            # Charger les textures énervées
-            chemin = os.path.join(DOSSIER_DATA, "mobs", "foret", "sol", "nrv")
-            if os.path.exists(chemin):
-                for f in sorted(os.listdir(chemin)):
-                    if f.endswith(".png"):
-                        self.textures.append(arcade.load_texture(os.path.join(chemin, f)))
-
-    def logique_ia(self, joueur, tirs_ennemis):
-        if self.points_de_vie < self.vie_max:
-            self.devenir_enerve()
-
-        if self.enerve:
-            # Dash vers le joueur
-            if self.center_x < joueur.center_x:
-                self.change_x = 6
-            else:
-                self.change_x = -6
-        else:
-            # Patrouille simple
-            self.timer_attaque += 1/60
-            if self.timer_attaque > 3.0:
-                self.change_x = random.choice([-2, 2])
-                self.timer_attaque = 0
-
-    def update_sol(self, liste_murs):
-        # 1. Gravité : descendre si on ne touche pas la hit-box
-        self.change_y -= 0.5 # Utilise la constante GRAVITE si définie
-        self.center_y += self.change_y
-        # 2. Test de collision avec le calque "hit-box" (liste_murs)
-        blocs_touches = arcade.check_for_collision_with_list(self, liste_murs)
-    
-        if blocs_touches:
-            for bloc in blocs_touches:
-                # Si on est "coincé" dans un bloc, TP vers le haut
-                if self.bottom < bloc.top and self.top > bloc.bottom:
-                    self.bottom = bloc.top
-                    self.change_y = 0
-
-# ================= MOBS DESERT =================
-class MobDesertAir(Mob):
-    def __init__(self, x, y, taille=1.2):
-        super().__init__(x, y, vie_max=2, volant=True, dossier_anim="desert/air", taille=taille)
-        self.degats_contact = 1
-        self.max_points_de_vie = 3
-        self.textures = []
-        for i in range(0, 2):
-            path = os.path.join(DOSSIER_DATA, "mobs", "desert", "air", f"puce{i}.png")
-            if os.path.exists(path):
-                self.textures.append(arcade.load_texture(path))
-
-    def logique_ia(self, joueur, tirs_ennemis):
-        distance = math.dist((self.center_x, self.center_y), (joueur.center_x, joueur.center_y))
-        if distance <= 10 * TAILLE_TUILE:
-            angle = math.atan2(joueur.center_y - self.center_y, joueur.center_x - self.center_x)
-            self.change_x = math.cos(angle) * 7 # Très rapide
-            self.change_y = math.sin(angle) * 7
-
-    def update_air(self, joueur):
-        hauteur_cible = joueur.center_y + 100 # Toujours 100px au-dessus
-    
-        if self.center_y < hauteur_cible:
-            self.change_y = 1.5 # Remonte doucement
-        else:
-            # Petit mouvement de flottaison sinus
-            self.change_y = math.sin(arcade.get_time_total()) * 0.5
-    
-        self.center_y += self.change_y
-
-class MobDesertSol(Mob):
-    def __init__(self, x, y):
-        super().__init__(x, y, vie_max=6, volant=False, dossier_anim="desert/sol")
-        self.degats_contact = 3
-        self.textures = []
-        for i in range(0, 2):
-            path = os.path.join(DOSSIER_DATA, "mobs", "desert", "sol", f"sable{i}.png")
-            if os.path.exists(path):
-                self.textures.append(arcade.load_texture(path))
-
-    def logique_ia(self, joueur, tirs_ennemis):
-        distance = math.dist((self.center_x, self.center_y), (joueur.center_x, joueur.center_y))
-        if distance <= 5 * TAILLE_TUILE:
-            self.change_x = 1.5 if joueur.center_x > self.center_x else -1.5
-
-    def update_sol(self, liste_murs):
-        # 1. Gravité : descendre si on ne touche pas la hit-box
-        self.change_y -= 0.5 # Utilise la constante GRAVITE si définie
-        self.center_y += self.change_y
-        # 2. Test de collision avec le calque "hit-box" (liste_murs)
-        blocs_touches = arcade.check_for_collision_with_list(self, liste_murs)
-    
-        if blocs_touches:
-            for bloc in blocs_touches:
-                # Si on est "coincé" dans un bloc, TP vers le haut
-                if self.bottom < bloc.top and self.top > bloc.bottom:
-                    self.bottom = bloc.top
-                    self.change_y = 0
-
-# ================= MOBS VILLE =================
-class MobVilleAir(Mob):
-    def __init__(self, x, y):
-        super().__init__(x, y, vie_max=5, volant=True, dossier_anim="ville/air")
-        self.max_points_de_vie = 3
-        self.textures = []
-        for i in range(0, 2):
-            path = os.path.join(DOSSIER_DATA, "mobs", "ville", "air", f"drone{i}.png")
-            if os.path.exists(path):
-                self.textures.append(arcade.load_texture(path))
-
-    def logique_ia(self, joueur, tirs_ennemis):
-        distance = math.dist((self.center_x, self.center_y), (joueur.center_x, joueur.center_y))
-        if distance <= 14 * TAILLE_TUILE:
-            if distance > 5 * TAILLE_TUILE:
-                angle = math.atan2(joueur.center_y - self.center_y, joueur.center_x - self.center_x)
-                self.change_x = math.cos(angle) * 2
-                self.change_y = math.sin(angle) * 2
-            else:
-                self.change_x, self.change_y = 0, 0
-
-            self.timer_attaque += 1/60
-            if self.timer_attaque >= 2.0:
-                # Rafale de 3 balles
-                for i in range(-1, 2):
-                    tir = ProjectileEnnemi(self.center_x, self.center_y + (i*10), joueur, degats=2, vitesse=6, image="ville/air/balle_grise.png")
-                    tirs_ennemis.append(tir)
-                self.timer_attaque = 0
-
-    def update_air(self, joueur):
-        hauteur_cible = joueur.center_y + 100 # Toujours 100px au-dessus
-    
-        if self.center_y < hauteur_cible:
-            self.change_y = 1.5 # Remonte doucement
-        else:
-            # Petit mouvement de flottaison sinus
-            self.change_y = math.sin(arcade.get_time_total()) * 0.5
-    
-        self.center_y += self.change_y
-
-class MobVilleSol(Mob):
-    def __init__(self, x, y):
-        super().__init__(x, y, vie_max=2, volant=False, dossier_anim="ville/sol")
-        self.max_points_de_vie = 3
-        self.textures = []
-        for i in range(1, 6):
-            path = os.path.join(DOSSIER_DATA, "mobs", "ville", "sol", f"_sol.{i}.png")
-            if os.path.exists(path):
-                self.textures.append(arcade.load_texture(path))
-
-    def logique_ia(self, joueur, tirs_ennemis):
-        distance = math.dist((self.center_x, self.center_y), (joueur.center_x, joueur.center_y))
-        if distance <= 15 * TAILLE_TUILE:
-            self.change_x = 0 # S'arrête
-            self.timer_attaque += 1/60
-            if self.timer_attaque >= 3.0:
-                tir = ProjectileEnnemi(self.center_x, self.center_y, joueur, degats=3, vitesse=4, image="ville/sol/grosse_balle.png", taille=2.0)
-                tirs_ennemis.append(tir)
-                self.timer_attaque = 0
-        else:
-            # Se déplace aléatoirement
-            self.timer_attaque += 1/60
-            if self.timer_attaque > 4.0:
-                self.change_x = random.choice([-1.5, 0, 1.5])
-                self.timer_attaque = 0
+        self.direction = 1 # 1 pour droite, -1 pour gauche
         
-    def update_sol(self, liste_murs):
-        # 1. Gravité : descendre si on ne touche pas la hit-box
-        self.change_y -= 0.5 # Utilise la constante GRAVITE si définie
-        self.center_y += self.change_y
-        # 2. Test de collision avec le calque "hit-box" (liste_murs)
-        blocs_touches = arcade.check_for_collision_with_list(self, liste_murs)
-    
-        if blocs_touches:
-            for bloc in blocs_touches:
-                # Si on est "coincé" dans un bloc, TP vers le haut
-                if self.bottom < bloc.top and self.top > bloc.bottom:
-                    self.bottom = bloc.top
-                    self.change_y = 0
+    def logique_sol(self, liste_murs):
+        # deplacement simple
+        self.change_x = self.vitesse * self.direction
         
+        # inverse la direction si on touche un mur
+        if arcade.check_for_collision_with_list(self, liste_murs):
+            self.direction *= -1
+            self.center_x += self.direction * 5
+
+    def orienter_vers_joueur(self, joueur):
+        # on change la direction pour faire face au joueur
+        if joueur.center_x < self.center_x:
+            self.direction = -1
+        else:
+            self.direction = 1
+
+    def update_animation(self, delta_time=1/60):
+        super().update_animation(delta_time)
+        if not self.textures_marche:
+            return
+
+        if self.temps_ecoule > self.vitesse_animation:
+            self.temps_ecoule = 0
+            self.frame_actuelle = (self.frame_actuelle + 1) % len(self.textures_marche)
+            
+            base = self.textures_marche[self.frame_actuelle]
+            # miroir selon la direction
+            if self.direction == -1:
+                self.texture = base.flip_left_right()
+            else:
+                self.texture = base
+
+# on cree des alias pour que main.py ne crashe pas avec les anciens noms
+class MobForetSol(Ennemi):
+    def __init__(self, x, y):
+        super().__init__(x, y, os.path.join("foret", "sol"), nb_anim=4)
+
+class MobDesertSol(Ennemi):
+    def __init__(self, x, y):
+        super().__init__(x, y, os.path.join("desert", "sol"), nb_anim=4)
+
+class MobVilleSol(Ennemi):
+    def __init__(self, x, y):
+        super().__init__(x, y, os.path.join("ville", "sol"), nb_anim=4)
+
+
 class PNJ(arcade.Sprite):
     def __init__(self, x, y):
         super().__init__(center_x=x, center_y=y, scale=0.5)
@@ -667,34 +343,35 @@ class PNJ(arcade.Sprite):
             )
 
 class EffetAttaque(arcade.Sprite):
-    def __init__(self, joueur, dossier_attaque):
-        super().__init__()
-        # 1. Orientation basée sur le sprite du joueur
-        # On regarde si le joueur est "flipped" ou non
-        self.direction = -1 if joueur.flipped_horizontally else 1
+    def __init__(self, joueur, dossier):
+        super().__init__(scale=0.4)
         
-        # 2. Positionnement
-        distance = 50 
-        self.center_x = joueur.center_x + (distance * self.direction)
+        self.direction = -1 if joueur.flip_left_right else 1
+        self.center_x = joueur.center_x + (self.direction * 50) # Décale de 50 pixels devant le nez du joueur
         self.center_y = joueur.center_y
         
-        # 3. Chargement des 12 textures
+        # Correction de l'erreur : on utilise flip_left_right
+        # Si le joueur regarde à gauche, l'attaque doit être à gauche
+        self.direction = -1 if joueur.flip_left_right else 1
+        
+        # On décale l'effet un peu devant le joueur
+        self.center_x += self.direction * 40
+
+        # Chargement des textures
         self.textures = []
-        for i in range(1, 13): # de 1 à 12
-            nom_fichier = os.path.join(dossier_attaque, f"attaque{i}.png")
-            if os.path.exists(nom_fichier):
-                tex = arcade.load_texture(nom_fichier)
-                if self.direction == -1:
-                    tex = tex.flip_left_right()
+        for i in range(1, 13):
+            chemin = os.path.join(dossier, f"attaque{i}.png")
+            tex = arcade.load_texture(chemin)
+            # Si le joueur est retourné, on retourne aussi l'effet
+            if self.direction == -1:
+                self.textures.append(tex.flip_left_right())
+            else:
                 self.textures.append(tex)
         
-        if self.textures:
-            self.texture = self.textures[0]
-        
+        self.texture = self.textures[0]
         self.frame = 0
         self.timer = 0
-        # 0.4s pour 12 images => ~0.0333s par image
-        self.vitesse_frame = 0.4 / 12 
+        self.vitesse_frame = 0.03 # Vitesse de l'animation
 
     def update_animation(self, delta_time=1/60):
         self.timer += delta_time
@@ -729,3 +406,196 @@ class ProjectileEnnemi(arcade.Sprite):
         self.center_x += self.change_x
         self.center_y += self.change_y
         # Supprimer si hors écran (optionnel mais recommandé)
+
+
+# --- systeme de boss ---
+
+class EntiteBoss(arcade.Sprite):
+    def __init__(self, x, y, image, scale=1.0):
+        super().__init__(image, scale)
+        self.center_x = x
+        self.center_y = y
+        self.pv = 1
+        self.pv_max = 1
+        self.degats = 1
+        self.etat = "idle"
+        self.timer_action = 0
+        self.timer_tremblement = 0
+        self.pos_x_base = x
+
+    def dessiner_barre_vie(self):
+        # dessine la jauge rouge et verte au dessus du sprite
+        largeur_barre = 50
+        hauteur_barre = 5
+        y_barre = self.top + 10
+        ratio = max(0, self.pv / self.pv_max)
+        
+        # fond rouge
+        arcade.draw_rect_filled(arcade.rect.XYWH(self.center_x, y_barre, largeur_barre, hauteur_barre), arcade.color.RED)
+        # vie verte
+        arcade.draw_rect_filled(arcade.rect.XYWH(self.center_x - (largeur_barre * (1 - ratio) / 2), y_barre, largeur_barre * ratio, hauteur_barre), arcade.color.GREEN)
+
+    def appliquer_physique(self, murs):
+        # gere la gravite et les collisions basiques avec la hit box du decor
+        self.change_y -= GRAVITE
+        self.center_y += self.change_y
+        
+        collisions_y = arcade.check_for_collision_with_list(self, murs)
+        for mur in collisions_y:
+            if self.change_y > 0:
+                self.top = mur.bottom
+            elif self.change_y < 0:
+                self.bottom = mur.top
+            self.change_y = 0
+
+        self.center_x += self.change_x
+        collisions_x = arcade.check_for_collision_with_list(self, murs)
+        for mur in collisions_x:
+            if self.change_x > 0:
+                self.right = mur.left
+            elif self.change_x < 0:
+                self.left = mur.right
+            self.change_x = 0
+
+class ProjectileBossBaton(arcade.Sprite):
+    def __init__(self, x, y, cible_x, cible_y):
+        chemin_base = os.path.join(DOSSIER_BOSS, "Boss arbre")
+        super().__init__(os.path.join(chemin_base, "Attaque.1.png"), scale=1.0)
+        self.center_x = x
+        self.center_y = y
+        self.degats = 4
+        self.vitesse = 6
+
+        # calcul de la direction vers le joueur
+        angle = math.atan2(cible_y - y, cible_x - x)
+        self.change_x = math.cos(angle) * self.vitesse
+        self.change_y = math.sin(angle) * self.vitesse
+
+        # chargement des images d animation
+        self.textures_anim = []
+        for i in range(1, 6):
+            self.textures_anim.append(arcade.load_texture(os.path.join(chemin_base, f"Attaque.{i}.png")))
+        self.frame = 0
+        self.timer_anim = 0
+
+    def update(self):
+        self.center_x += self.change_x
+        self.center_y += self.change_y
+
+        # animation du projectile
+        self.timer_anim += 1/60
+        if self.timer_anim > 0.1:
+            self.timer_anim = 0
+            self.frame = (self.frame + 1) % len(self.textures_anim)
+            self.texture = self.textures_anim[self.frame]
+
+# --- boss arbre ---
+
+class BossArbreP1(EntiteBoss):
+    def __init__(self, x, y, joueur):
+        chemin_image = os.path.join(DOSSIER_BOSS, "Boss arbre", "P1.png")
+        super().__init__(x, y, chemin_image)
+        self.joueur = joueur
+        self.pv = 5
+        self.pv_max = 5
+        self.degats = 4
+        self.timer_action = random.uniform(3, 6)
+
+    def update_boss(self, delta_time, liste_projectiles, murs):
+        # la phase 1 ne bouge pas, pas besoin d appliquer la physique
+        if self.etat == "idle":
+            self.timer_action -= delta_time
+            if self.timer_action <= 0:
+                self.etat = "tremble"
+                self.timer_tremblement = 1.0
+                self.pos_x_base = self.center_x
+
+        elif self.etat == "tremble":
+            self.timer_tremblement -= delta_time
+            # effet de tremblement gauche droite
+            self.center_x = self.pos_x_base + random.uniform(-5, 5)
+
+            if self.timer_tremblement <= 0:
+                self.center_x = self.pos_x_base
+                self.etat = "idle"
+                self.timer_action = random.uniform(3, 6)
+                # tire le projectile
+                baton = ProjectileBossBaton(self.center_x, self.center_y, self.joueur.center_x, self.joueur.center_y)
+                liste_projectiles.append(baton)
+
+    def au_deces(self):
+        # quand la phase 1 meurt, on spawn 2 entites de phase 2
+        return [
+            BossArbreP2(self.center_x - 64, self.center_y, self.joueur),
+            BossArbreP2(self.center_x + 64, self.center_y, self.joueur)
+        ]
+
+class BossArbreP2(EntiteBoss):
+    def __init__(self, x, y, joueur):
+        chemin_image = os.path.join(DOSSIER_BOSS, "Boss arbre", "P2.png")
+        super().__init__(x, y, chemin_image)
+        self.tex_idle = arcade.load_texture(chemin_image)
+        self.tex_saut = arcade.load_texture(os.path.join(DOSSIER_BOSS, "Boss arbre", "P2.saut.png"))
+        self.joueur = joueur
+        self.pv = 3
+        self.pv_max = 3
+        self.degats = 2
+        self.timer_action = random.uniform(2, 5)
+
+    def update_boss(self, delta_time, liste_projectiles, murs):
+        self.appliquer_physique(murs)
+
+        if self.etat == "idle":
+            self.texture = self.tex_idle
+            self.change_x = 0
+            self.timer_action -= delta_time
+            if self.timer_action <= 0:
+                self.etat = "tremble"
+                self.timer_tremblement = 1.0
+                self.pos_x_base = self.center_x
+
+        elif self.etat == "tremble":
+            self.timer_tremblement -= delta_time
+            self.center_x = self.pos_x_base + random.uniform(-4, 4)
+
+            if self.timer_tremblement <= 0:
+                self.center_x = self.pos_x_base
+                self.etat = "saut"
+                self.texture = self.tex_saut
+                # grand bond vers le joueur
+                self.change_y = 15
+                direction = 1 if self.joueur.center_x > self.center_x else -1
+                self.change_x = direction * 8
+
+        elif self.etat == "saut":
+            # si on atterrit au sol
+            if self.change_y == 0:
+                self.etat = "idle"
+                self.timer_action = random.uniform(2, 5)
+
+    def au_deces(self):
+        # quand une phase 2 meurt, on spawn 1 entite de phase 3
+        return [BossArbreP3(self.center_x, self.center_y, self.joueur)]
+
+class BossArbreP3(EntiteBoss):
+    def __init__(self, x, y, joueur):
+        chemin_image = os.path.join(DOSSIER_BOSS, "Boss arbre", "P3.png")
+        super().__init__(x, y, chemin_image)
+        self.joueur = joueur
+        self.pv = 1
+        self.pv_max = 1
+        self.degats = 1
+        self.timer_saut = 0.5
+
+    def update_boss(self, delta_time, liste_projectiles, murs):
+        self.appliquer_physique(murs)
+        self.timer_saut -= delta_time
+
+        # petit saut periodique
+        if self.timer_saut <= 0 and self.change_y == 0:
+            self.change_y = 8
+            direction = 1 if self.joueur.center_x > self.center_x else -1
+            self.change_x = direction * 4
+            self.timer_saut = random.uniform(0.5, 1.5)
+        elif self.change_y == 0:
+            self.change_x = 0

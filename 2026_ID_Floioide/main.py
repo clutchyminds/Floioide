@@ -4,7 +4,7 @@ import os
 from sources.constantes import *
 from sources.inputs import InputHandler
 from sources.logic import gerer_collisions
-from sources.entities import Joueur, Boss, MobDesertAir, MobDesertSol, MobDesertSol, MobForetAir, MobForetSol, MobVilleAir, MobVilleSol, PNJ, EffetAttaque
+from sources.entities import Joueur, Boss, MobDesertSol, MobForetSol, MobVilleSol, PNJ, EffetAttaque, BossArbreP1, BossArbreP2, BossArbreP3
 from sources.interface import HUD, Chat, InterfaceShop
 import math
 
@@ -136,6 +136,12 @@ class MonJeu(arcade.View):
             "pnjs": arcade.SpriteList()
         }
         
+        # variables pour gerer le systeme de boss
+        self.boss_actif = False
+        self.liste_boss = arcade.SpriteList()
+        self.liste_projectiles_boss = arcade.SpriteList()
+        self.murs_boss = arcade.SpriteList() # va contenir les collisions + le calque declencheur
+        self.scene = None
         # 2. Initialisation des outils
         self.fleur = None
         self.physique = None
@@ -224,6 +230,11 @@ class MonJeu(arcade.View):
             gravity_constant=0.5, 
             walls=self.tiroirs["murs"]
         )
+        
+        self.boss_actif = False
+        self.liste_boss = arcade.SpriteList()
+        self.liste_projectiles_boss = arcade.SpriteList()
+        self.murs_boss = arcade.SpriteList()
 
         if not self.lecteur_musique:
             self.lecteur_musique = arcade.play_sound(self.musique_fond, volume=0.5, loop=True)
@@ -525,17 +536,6 @@ class MonJeu(arcade.View):
         px = self.fleur.center_x
         py = self.fleur.center_y
 
-        # Spawn Air (toutes les 30s)
-        if self.timer_spawn_air > 30.0 and mobs_air < 5:
-            offset_x = random.choice([-400, 400])
-            if 0 <= px <= 8600:
-                self.tiroirs["ennemis"].append(MobForetAir(px + offset_x, py + 200))
-            elif 8600 < px <= 14000:
-                self.tiroirs["ennemis"].append(MobDesertAir(px + offset_x, py + 200))
-            else:
-                self.tiroirs["ennemis"].append(MobVilleAir(px + offset_x, py + 200))
-            self.timer_spawn_air = 0
-
         # Spawn Sol (toutes les 15s par exemple)
         if self.timer_spawn_sol > 15.0 and mobs_sol < 5:
             offset_x = random.choice([-500, 500])
@@ -587,6 +587,87 @@ class MonJeu(arcade.View):
 
                 self.fleur.dernier_coup_timer += delta_time
 
+        # --- gestion du boss arbre ---
+        
+        # 1. declenchement si on touche le calque tron
+        if not self.boss_actif and "tron" in self.scene:
+            collisions_tron = arcade.check_for_collision_with_list(self.fleur, self.scene["tron"])
+            if collisions_tron:
+                self.boss_actif = True
+                
+                # on prepare les murs pour le boss (collisions normales + tron)
+                self.murs_boss.clear()
+                self.murs_boss.extend(self.scene["collisions"])
+                self.murs_boss.extend(self.scene["tron"])
+
+                # on recree le moteur physique du joueur pour que tron devienne solide
+                self.moteur_physique = arcade.PhysicsEnginePlatformer(
+                    self.fleur,
+                    gravity_constant=GRAVITE,
+                    walls=[self.scene["collisions"], self.scene["tron"]]
+                )
+
+                # on fait spawn le boss arbre en phase 1 a ses coordonnees fixes
+                boss_p1 = BossArbreP1(4094, 2669, self.fleur)
+                self.liste_boss.append(boss_p1)
+
+        # 2. mise a jour des entites du boss actif
+        if self.boss_actif:
+            # update des sprites boss
+            for boss in self.liste_boss:
+                boss.update_boss(delta_time, self.liste_projectiles_boss, self.murs_boss)
+                
+                # si le boss touche le joueur, il lui fait des degats
+                if arcade.check_for_collision(self.fleur, boss):
+                    self.fleur.vie -= boss.degats
+                    # petit recul pour pas se faire spammer
+                    self.fleur.center_x += 30 if self.fleur.center_x > boss.center_x else -30
+
+            # update des projectiles du boss (le baton)
+            self.liste_projectiles_boss.update()
+            for proj in self.liste_projectiles_boss:
+                # si ca sort de l ecran, on supprime
+                if proj.right < 0 or proj.left > LARGEUR or proj.top < 0 or proj.bottom > HAUTEUR:
+                    proj.remove_from_sprite_lists()
+                    continue
+                # si le baton touche le joueur
+                if arcade.check_for_collision(self.fleur, proj):
+                    self.fleur.vie -= proj.degats
+                    proj.remove_from_sprite_lists()
+
+            # 3. le joueur tape le boss
+            if "attaques" in self.tiroirs and self.tiroirs["attaques"]:
+                for attaque in self.tiroirs["attaques"]:
+                    if not hasattr(attaque, "deja_touche_boss"):
+                        attaque.deja_touche_boss = set()
+
+                    boss_touches = arcade.check_for_collision_with_list(attaque, self.liste_boss)
+                    for boss in boss_touches:
+                        if boss not in attaque.deja_touche_boss:
+                            boss.pv -= 1 # 1 de degat inflige par ton attaque
+                            attaque.deja_touche_boss.add(boss)
+
+                            # si le boss ou son entite meurt
+                            if boss.pv <= 0:
+                                # on regarde s il a une phase suivante (au_deces)
+                                if hasattr(boss, "au_deces"):
+                                    nouvelles_entites = boss.au_deces()
+                                    for entite in nouvelles_entites:
+                                        self.liste_boss.append(entite)
+                                boss.remove_from_sprite_lists()
+
+            # 4. verification de la fin totale du boss
+            if len(self.liste_boss) == 0:
+                self.boss_actif = False
+                self.liste_projectiles_boss.clear()
+                
+                # le boss est mort, le calque tron redevient non solide
+                self.moteur_physique = arcade.PhysicsEnginePlatformer(
+                    self.fleur,
+                    gravity_constant=GRAVITE,
+                    walls=[self.scene["collisions"]]
+                )
+                
     def on_draw(self):
         self.clear()
         
@@ -683,6 +764,13 @@ class MonJeu(arcade.View):
         self.hud.dessiner(self.fleur)
         self.chat.dessiner() # On dessine le chat par dessus tout
         self.shop.dessiner()
+
+        # dessin des boss et barres de vie
+        if self.boss_actif:
+            self.liste_boss.draw()
+            self.liste_projectiles_boss.draw()
+            for boss in self.liste_boss:
+                boss.dessiner_barre_vie()
 
         
 def main():

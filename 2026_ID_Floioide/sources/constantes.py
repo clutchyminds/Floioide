@@ -24,7 +24,9 @@ DISTANCE_DETECTION = 320 # 5 tuiles de 64px
 VITESSE_MOB = 2
 GRAVITE = 0.5
 
-# --- AJOUTE CES LIGNES DANS constantes.py ---
+
 TAILLE_TUILE = 64
 MAX_MOBS_SOL = 5
 MAX_MOBS_AIR = 5
+
+DOSSIER_BOSS = os.path.join(DOSSIER_DATA, "boss")
