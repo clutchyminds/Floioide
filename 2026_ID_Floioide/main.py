@@ -118,6 +118,8 @@ class MonJeu(arcade.View):
     def __init__(self):
         super().__init__()
 
+        self.scene = None
+        
         self.camera_sprites = arcade.camera.Camera2D()
         self.camera_gui = arcade.camera.Camera2D()
 
@@ -133,7 +135,9 @@ class MonJeu(arcade.View):
             "ennemis": arcade.SpriteList(),
             "tirs": arcade.SpriteList(),
             "joueur": arcade.SpriteList(),
-            "pnjs": arcade.SpriteList()
+            "pnjs": arcade.SpriteList(),
+            "boss": arcade.SpriteList(),               # <-- AJOUTE POUR LE BOSS
+            "projectiles_ennemis": arcade.SpriteList(), # <-- AJOUTE POUR LES PROJECTILES DES ENNEMIS
         }
         
         # variables pour gerer le systeme de boss
@@ -176,12 +180,21 @@ class MonJeu(arcade.View):
     def setup(self):
         """ Configuration initiale du niveau et du spawn """
         
-        # 1. Chargement de la Map Tiled
-        m_path = os.path.join(DOSSIER_MAPS, "map.tmj")
         
+        # 1. Chargement de la Map Tiled
+        map_path = os.path.join(DOSSIER_MAPS, "map.tmj")
+        # --- CHARGEMENT DE LA MAP ---
+        layer_options = {
+            "collisions": {"use_spatial_hash": True},
+        }
+
+        self.tile_map = arcade.load_tilemap(map_path, scaling=1.0, layer_options=layer_options)
+
+        # AJOUTE CETTE LIGNE JUSTE ICI :
+        self.scene = arcade.Scene.from_tilemap(self.tile_map)
         try:
             # On charge la map
-            self.tile_map = arcade.tilemap.load_tilemap(m_path, scaling=2.0)
+            self.tile_map = arcade.tilemap.load_tilemap(map_path, scaling=2.0)
             
             # --- RÉCUPÉRATION DES CALQUES ---
             self.tiroirs["murs"] = self.tile_map.sprite_lists.get("hit-box", arcade.SpriteList())
@@ -449,20 +462,25 @@ class MonJeu(arcade.View):
 
         # --- LOGIQUE DÉCLENCHEMENT BOSS ---
         # On ne vérifie la collision QUE si le boss n'est pas déjà apparu
-        if not self.boss_apparu:
-            zones_touchees = arcade.check_for_collision_with_list(self.fleur, self.tiroirs["declencheurs"])
-            if zones_touchees:
-                # On crée UN SEUL boss aux coordonnées souhaitées
-                le_boss = Boss(502, 2700) 
-                le_boss.cible = self.fleur
-                self.tiroirs["ennemis"].append(le_boss)
-                
-                # On verrouille pour ne plus jamais rentrer ici
-                self.boss_apparu = True
-                
-                # On supprime les tuiles de déclenchement pour gagner en performance
-                for z in zones_touchees:
-                    z.remove_from_sprite_lists()
+        if not self.boss_actif and "tron" in self.scene:
+            # On vérifie si le joueur touche une tuile du calque "tron"
+            hit_list = arcade.check_for_collision_with_list(self.fleur, self.scene["tron"])
+    
+            if len(hit_list) > 0:
+                print("CONTACT AVEC LE TRON !") # Ajoute ce print pour tester dans la console
+                self.boss_actif = True
+        
+                # On fait apparaître le boss
+                nouveau_boss = BossArbreP1(4094, 2669, self.fleur)
+                self.tiroirs["boss"].append(nouveau_boss)
+        
+                # IMPORTANT : On recrée le moteur physique pour que "tron" devienne solide
+                self.moteur_physique = arcade.PhysicsEnginePlatformer(
+                    self.fleur,
+                    platforms=self.scene["tron"], # On ajoute le calque aux murs
+                    gravity_constant=GRAVITE,
+                    walls=self.scene["collisions"]
+                )
 
         # --- GESTION DES DÉGÂTS ---
         self.timer_degats += delta_time
@@ -589,51 +607,69 @@ class MonJeu(arcade.View):
 
         # --- gestion du boss arbre ---
         
-        # 1. declenchement si on touche le calque tron
         if not self.boss_actif and "tron" in self.scene:
-            collisions_tron = arcade.check_for_collision_with_list(self.fleur, self.scene["tron"])
-            if collisions_tron:
+            hit_list = arcade.check_for_collision_with_list(self.fleur, self.scene["tron"])
+    
+            if len(hit_list) > 0:
                 self.boss_actif = True
-                
-                # on prepare les murs pour le boss (collisions normales + tron)
-                self.murs_boss.clear()
-                self.murs_boss.extend(self.scene["collisions"])
-                self.murs_boss.extend(self.scene["tron"])
-
-                # on recree le moteur physique du joueur pour que tron devienne solide
+                print("Boss activé !")
+        
+                # 1. Créer le boss
+                nouveau_boss = BossArbreP1(4094, 2669, self.fleur)
+                self.tiroirs["boss"].append(nouveau_boss)
+        
+                # 2. RENDRE LE TRON SOLIDE
+                murs_complets = arcade.SpriteList()
+                murs_complets.extend(self.scene["collisions"])
+                murs_complets.extend(self.scene["tron"])
+                    
+                # 3. On met à jour le moteur physique avec les vrais murs
                 self.moteur_physique = arcade.PhysicsEnginePlatformer(
                     self.fleur,
-                    gravity_constant=GRAVITE,
-                    walls=[self.scene["collisions"], self.scene["tron"]]
+                    walls=murs_complets, # utilise walls ici
+                    gravity_constant=GRAVITE
                 )
+        
+        for boss in self.tiroirs["boss"]:
+            # On lui donne la liste des collisions de la map pour qu'il ne traverse pas le sol
+            boss.update_boss(delta_time, self.tiroirs["projectiles_ennemis"], self.scene["collisions"])
 
-                # on fait spawn le boss arbre en phase 1 a ses coordonnees fixes
-                boss_p1 = BossArbreP1(4094, 2669, self.fleur)
-                self.liste_boss.append(boss_p1)
+        # --- MISE A JOUR DES ENTITES DU BOSS ---
+        if self.boss_actif and "boss" in self.tiroirs:
+            
+            # 1. creation des murs pour le boss
+            murs_pour_boss = arcade.SpriteList()
+            murs_pour_boss.extend(self.scene["collisions"])
+            if "tron" in self.scene:
+                murs_pour_boss.extend(self.scene["tron"])
 
-        # 2. mise a jour des entites du boss actif
-        if self.boss_actif:
-            # update des sprites boss
-            for boss in self.liste_boss:
-                boss.update_boss(delta_time, self.liste_projectiles_boss, self.murs_boss)
+            # 2. update des sprites boss
+            for boss in self.tiroirs["boss"]:
+                # le boss recoit les murs pour ne plus passer a travers le sol
+                boss.update_boss(delta_time, self.tiroirs["projectiles_ennemis"], murs_pour_boss)
                 
-                # si le boss touche le joueur, il lui fait des degats
+                # si le boss touche le joueur au corps a corps
                 if arcade.check_for_collision(self.fleur, boss):
                     self.fleur.vie -= boss.degats
-                    # petit recul pour pas se faire spammer
                     self.fleur.center_x += 30 if self.fleur.center_x > boss.center_x else -30
 
-            # update des projectiles du boss (le baton)
-            self.liste_projectiles_boss.update()
-            for proj in self.liste_projectiles_boss:
-                # si ca sort de l ecran, on supprime
-                if proj.right < 0 or proj.left > LARGEUR or proj.top < 0 or proj.bottom > HAUTEUR:
-                    proj.remove_from_sprite_lists()
-                    continue
-                # si le baton touche le joueur
+            # 3. update des projectiles (le baton)
+            self.tiroirs["projectiles_ennemis"].update()
+            for proj in self.tiroirs["projectiles_ennemis"]:
                 if arcade.check_for_collision(self.fleur, proj):
                     self.fleur.vie -= proj.degats
                     proj.remove_from_sprite_lists()
+
+            # 4. si le boss est totalement vaincu
+            if len(self.tiroirs["boss"]) == 0:
+                self.boss_actif = False
+                self.tiroirs["projectiles_ennemis"].clear()
+                # le calque tron redevient traversable
+                self.moteur_physique = arcade.PhysicsEnginePlatformer(
+                    self.fleur,
+                    walls=self.scene["collisions"],
+                    gravity_constant=GRAVITE
+                )
 
             # 3. le joueur tape le boss
             if "attaques" in self.tiroirs and self.tiroirs["attaques"]:
@@ -669,109 +705,39 @@ class MonJeu(arcade.View):
                 )
                 
     def on_draw(self):
+        # 1. On nettoie l'écran (très important pour ne pas avoir d'images fantômes)
         self.clear()
         
+        # --- A. COUCHE "MONDE" (Tout ce qui bouge avec le joueur) ---
+        self.camera_sprites.use() 
+        
+        # On dessine la map (Sol, décors) UNE SEULE FOIS ici
+        # self.scene.draw()
+        
+        # On dessine les entités par-dessus
+        if "pnjs" in self.tiroirs: self.tiroirs["pnjs"].draw()
+        if "ennemis" in self.tiroirs: self.tiroirs["ennemis"].draw()
+        if "boss" in self.tiroirs:
+            self.tiroirs["boss"].draw()
+            for b in self.tiroirs["boss"]:
+                b.dessiner_barre_vie()
+        
         if "projectiles_ennemis" in self.tiroirs: self.tiroirs["projectiles_ennemis"].draw()
+        if "attaques" in self.tiroirs: self.tiroirs["attaques"].draw()
 
-        # 1. On active la caméra du jeu
-        self.camera_jeu.use()
+        # --- B. COUCHE "INTERFACE" (Tout ce qui reste fixe sur l'écran) ---
+        self.camera_gui.use()
         
-        
-        # 2. On dessine les calques dans l'ordre (Arrière vers Avant)
-        # 4ème plan
-        if "boss_test" in self.tiroirs:
-            self.tiroirs["boss_test"].draw()
-            
-        # 3ème plan
-        if "background" in self.tiroirs:
-            self.tiroirs["background"].draw()
-            
-        # 2ème plan (Le sol / hit-box)
-        self.tiroirs["murs"].draw()
-        
-        if "fontaines" in self.tiroirs:
-            self.tiroirs["fontaines"].draw()
-            
-        # Les entités
-        self.tiroirs["ennemis"].draw()
-
-        if "attaques" in self.tiroirs:
-            self.tiroirs["attaques"].draw()
-
-        self.tiroirs["tirs"].draw()
-        
+        # ON NE DESSINE JAMAIS LA SCENE ICI !
+        self.hud.dessiner(self.fleur)
         self.hud.dessiner_inventaire_et_monnaie(self.fleur)
+        self.chat.dessiner()
         self.shop.dessiner()
-        
-        self.tiroirs["ennemis"].draw_hit_boxes()
-        self.tiroirs["joueur"].draw_hit_boxes()
-        # 1er plan (Devant tout le monde)
-        if "front" in self.tiroirs:
-            self.tiroirs["front"].draw()
 
-        
-        
-        # On dessine la liste des PNJs
-        if "pnjs" in self.tiroirs:
-            self.tiroirs["pnjs"].draw()
-            
-            # On rajoute les contours par-dessus si survolé
-            for pnj in self.tiroirs["pnjs"]:
-                if pnj.est_survole:
-                    arcade.draw_rect_outline(
-                        rect=pnj.rect,
-                        color=arcade.color.WHITE,
-                        border_width=3
-                    )
-
-        self.tiroirs["joueur"].draw() # Dessine la plante via la liste (plus fiable)
-
-
-        if "attaques" in self.tiroirs:
-            self.tiroirs["attaques"].draw()
-
-        # 3. On active la caméra de l'interface (HUD)
-        self.camera_gui.use()
-        self.hud.dessiner(self.fleur)
-
-        # --- DEBUG F3 : DESSIN DES HITBOXES ---
+        # --- C. DEBUG ---
         if self.show_debug:
-            # Hitbox Joueur (Bleu)
-            self.fleur.draw_hit_box(arcade.color.BLUE, line_thickness=2)
-            
-            # Hitboxes Ennemis (Rouge)
-            for ennemi in self.tiroirs["ennemis"]:
-                ennemi.draw_hit_box(arcade.color.RED, line_thickness=1)
-                
-            # Hitbox Boss (Jaune)
-            if "boss" in self.tiroirs:
-                for b in self.tiroirs["boss"]:
-                    b.draw_hit_box(arcade.color.YELLOW, line_thickness=3)
-
-        # 2. Utilisation de la caméra d'interface (HUD)
-        self.camera_gui.use()
-        self.hud.dessiner(self.fleur)
-        
-        if self.show_debug:
-            # Infos texte
             debug_txt = f"X: {int(self.fleur.center_x)} Y: {int(self.fleur.center_y)}\nFPS: {int(arcade.get_fps())}"
             arcade.draw_text(debug_txt, 20, HAUTEUR - 60, arcade.color.GREEN, 12, multiline=True, width=400)
-
-
-        self.shop.dessiner()
-
-        self.camera_gui.use()
-        self.hud.dessiner(self.fleur)
-        self.chat.dessiner() # On dessine le chat par dessus tout
-        self.shop.dessiner()
-
-        # dessin des boss et barres de vie
-        if self.boss_actif:
-            self.liste_boss.draw()
-            self.liste_projectiles_boss.draw()
-            for boss in self.liste_boss:
-                boss.dessiner_barre_vie()
-
         
 def main():
     window = arcade.Window(LARGEUR, HAUTEUR, TITRE)
