@@ -532,6 +532,11 @@ class EntiteBossTron(arcade.Sprite):
             )
             arcade.draw_rect_filled(rect_vie, arcade.color.GREEN)
 
+    def update_boss(self, delta_time, liste_projectiles, murs):
+        """ Gère le temps de sécurité pour les dégâts """
+        if self.invul_timer > 0:
+            self.invul_timer -= delta_time
+
 # --- PROJECTILE (LE BATON) ---
 class ProjectileArbre(arcade.Sprite):
     def __init__(self, x, y, joueur):
@@ -577,13 +582,18 @@ class BossArbreP1(EntiteBossTron):
         self.timer_attaque = 0
 
     def update_boss(self, delta_time, liste_projectiles, murs):
+        super().update_boss(delta_time, liste_projectiles, murs)
+        self.appliquer_physique(murs)
+
+        # Lancer le bâton toutes les 5 secondes
+        self.timer_tir += delta_time
+        if self.timer_tir >= 5.0:
+            self.timer_tir = 0
+            self.lancer_baton(liste_projectiles)
+
         self.appliquer_physique(murs)
         if self.invul_timer > 0:
             self.invul_timer -= delta_time
-        self.timer_tir += delta_time
-        if self.timer_tir >= 5.0:  # Toutes les 5 secondes
-            self.timer_tir = 0
-            self.lancer_baton(liste_projectiles) # Appelle la fonction de tir
 
     def au_deces(self):
         # Libère deux P2
