@@ -7,6 +7,7 @@ from sources.logic import gerer_collisions
 from sources.entities import Joueur, Boss, MobDesertSol, MobForetSol, MobVilleSol, PNJ, EffetAttaque, BossArbreP1, BossArbreP2, BossArbreP3
 from sources.interface import HUD, Chat, InterfaceShop
 import math
+from arcade.hitbox import HitBox
 
 class CinematiqueView(arcade.View):
     def __init__(self):
@@ -156,6 +157,11 @@ class MonJeu(arcade.View):
         
         self.temps_depuis_dernier_mob = 0
 
+        self.timer_spawn_sol = 0.0
+        self.timer_spawn_air = 0.0
+        # Si ton code utilise aussi un timer général :
+        self.timer_spawn = 0.0
+        
         chemin_musique = os.path.join(DOSSIER_DATA, "sounds", "Popi.mp3")
         self.musique_fond = arcade.load_sound(chemin_musique)
 
@@ -177,88 +183,80 @@ class MonJeu(arcade.View):
         self.chat = Chat()
 
         self.timer_spawn = 0
+
+        self.camera_jeu = arcade.camera.Camera2D() # Pour le monde
+        self.camera_gui = arcade.camera.Camera2D() # Pour l'interface
+
+        self.window.ctx.default_filter = (arcade.gl.NEAREST, arcade.gl.NEAREST)
+
     def setup(self):
         """ Configuration initiale du niveau et du spawn """
-        
-        
         # 1. Chargement de la Map Tiled
         map_path = os.path.join(DOSSIER_MAPS, "map.tmj")
-        # --- CHARGEMENT DE LA MAP ---
-        layer_options = {
-            "collisions": {"use_spatial_hash": True},
-        }
-
-        self.tile_map = arcade.load_tilemap(map_path, scaling=1.0, layer_options=layer_options)
-
-        # AJOUTE CETTE LIGNE JUSTE ICI :
+        nom_murs = "hit-box" 
+        
+        layer_options = {nom_murs: {"use_spatial_hash": True}}
+        self.tile_map = arcade.load_tilemap(map_path, scaling=2.0, layer_options=layer_options)
+        
+        # Crée la scène unique
         self.scene = arcade.Scene.from_tilemap(self.tile_map)
-        try:
-            # On charge la map
-            self.tile_map = arcade.tilemap.load_tilemap(map_path, scaling=2.0)
-            
-            # --- RÉCUPÉRATION DES CALQUES ---
-            self.tiroirs["murs"] = self.tile_map.sprite_lists.get("hit-box", arcade.SpriteList())
-            self.tiroirs["front"] = self.tile_map.sprite_lists.get("front", arcade.SpriteList())
-            self.tiroirs["background"] = self.tile_map.sprite_lists.get("back-ground", arcade.SpriteList())
-            self.tiroirs["test"] = self.tile_map.sprite_lists.get("boss-test", arcade.SpriteList())
-            self.tiroirs["fontaines"] = self.tile_map.sprite_lists.get("fontaine", arcade.SpriteList())
 
-        except Exception as e:
-            print(f"Erreur chargement map : {e}")
-            # Sécurité : on crée une map vide si le fichier est introuvable
-            self.tile_map = arcade.TileMap()
+        # 2. Création du Joueur (DOIT ÊTRE FAIT AVANT LE RESTE)
+        self.fleur = Joueur(2026, 1800)
+        self.fleur.scale = 0.5  # Maintenant self.fleur existe, on peut changer le scale
+        self.fleur.hit_box = HitBox(self.fleur.texture.hit_box_points) # Assure la collision
 
-        # --- INITIALISATION DES LISTES ET VARIABLES ---
-        self.tiroirs["pnjs"] = arcade.SpriteList()
-        mon_pnj = PNJ(x=790, y=2550)
-        self.tiroirs["pnjs"].append(mon_pnj)
+        # --- RÉCUPÉRATION SÉCURISÉE DES CALQUES ---
+        def charger_calque(nom_tiled, nom_tiroir):
+            if nom_tiled in self.scene:
+                self.tiroirs[nom_tiroir] = self.scene[nom_tiled]
+            else:
+                self.tiroirs[nom_tiroir] = arcade.SpriteList()
 
-        self.tiroirs["tirs_ennemis"] = arcade.SpriteList()
-        self.tiroirs["attaques"] = arcade.SpriteList()
-        self.timer_spawn_air = 0
-        self.timer_spawn_sol = 0
+        # On remplit les tiroirs (Surtout les murs pour la physique !)
+        charger_calque("hit-box", "murs")
+        charger_calque("fontaine", "fontaines")
+        charger_calque("tron", "tron")
+        charger_calque("boss-test", "declencheurs")
+        charger_calque("front", "front")
+        charger_calque("back-ground", "background")
 
-        # --- LOGIQUE DE SPAWN DU JOUEUR ---
-        # On définit les coordonnées
-        spawn_x, spawn_y = 2026, 1700
-        
-        # On crée l'objet Joueur AVANT de l'ajouter au tiroir
-        self.fleur = Joueur(2026, 1700)
-        
-        # On initialise le tiroir joueur s'il n'existe pas
+        # --- INITIALISATION DES LISTES D'ENTITÉS ---
         self.tiroirs["joueur"] = arcade.SpriteList()
-        
-        # Maintenant on peut l'ajouter sans erreur car self.fleur n'est plus None
         self.tiroirs["joueur"].append(self.fleur)
+        
+        self.tiroirs["pnjs"] = arcade.SpriteList()
+        self.tiroirs["pnjs"].append(PNJ(790, 2550))
+        
+        self.tiroirs["ennemis"] = arcade.SpriteList()
+        self.tiroirs["attaques"] = arcade.SpriteList()
+        self.tiroirs["projectiles_ennemis"] = arcade.SpriteList()   
+        self.tiroirs["tirs_ennemis"] = arcade.SpriteList()
 
-        # --- MISE À JOUR DE LA CAMÉRA (Syntaxe Arcade 3.0) ---
-        if hasattr(self, 'camera_sprites'):
-            self.camera_sprites.position = (self.fleur.center_x, self.fleur.center_y)
+        # Ajout à la scène pour le dessin
+        self.scene.add_sprite_list("Couche_Joueur")
+        self.scene.add_sprite("Couche_Joueur", self.fleur)
 
-        self.fleur.position = (2026, 1700)
-
-        # 2. Moteur Physique
+        # 3. MOTEUR PHYSIQUE (EN DERNIER)
+        # Maintenant que self.fleur ET self.tiroirs["murs"] sont prêts
         self.physique = arcade.PhysicsEnginePlatformer(
             self.fleur, 
             gravity_constant=0.5, 
             walls=self.tiroirs["murs"]
         )
-        
-        self.boss_actif = False
-        self.liste_boss = arcade.SpriteList()
-        self.liste_projectiles_boss = arcade.SpriteList()
-        self.murs_boss = arcade.SpriteList()
 
+        # Musique et Boss
         if not self.lecteur_musique:
             self.lecteur_musique = arcade.play_sound(self.musique_fond, volume=0.5, loop=True)
-
-        # 3. GESTION DU BOSS ET DÉCLENCHEUR
-        self.boss_apparu = False
         
-        # On récupère le calque "test" qui sert de zone de déclenchement
-        # .get() permet d'éviter un plantage si le calque n'existe pas dans Tiled
-        self.tiroirs["declencheurs"] = self.tile_map.sprite_lists.get("test", arcade.SpriteList())
-
+        self.boss_actif = False
+        
+        # GESTION DU DÉCLENCHEUR BOSS
+        if "test" in self.scene:
+            self.tiroirs["declencheurs"] = self.scene["test"]
+        else:
+            if "declencheurs" not in self.tiroirs:
+                self.tiroirs["declencheurs"] = arcade.SpriteList()
         
     def on_text(self, text):
         """Fonction appelée automatiquement par Arcade quand on tape au clavier"""
@@ -459,19 +457,16 @@ class MonJeu(arcade.View):
                 self.lecteur_pas = None
 
         self.tiroirs["ennemis"].update_animation(delta_time)
-
+        collision_tron = arcade.check_for_collision_with_list(self.fleur, self.tiroirs["tron"])
         # --- LOGIQUE DÉCLENCHEMENT BOSS ---
         # On ne vérifie la collision QUE si le boss n'est pas déjà apparu
-        if not self.boss_actif and "tron" in self.scene:
-            # On vérifie si le joueur touche une tuile du calque "tron"
-            hit_list = arcade.check_for_collision_with_list(self.fleur, self.scene["tron"])
-    
-            if len(hit_list) > 0:
-                print("CONTACT AVEC LE TRON !") # Ajoute ce print pour tester dans la console
-                self.boss_actif = True
-        
-                # On fait apparaître le boss
-                nouveau_boss = BossArbreP1(4094, 2669, self.fleur)
+        if collision_tron and not self.boss_actif:
+            # Sécurité supplémentaire : on vérifie si la liste est VRAIMENT vide
+            if len(self.tiroirs["boss"]) == 0:
+                print("SPAWN DU BOSS UNIQUE")
+                self.boss_actif = True  # ON LE PASSE À TRUE IMMÉDIATEMENT
+                
+                nouveau_boss = BossArbreP1(2000, 1800, self.fleur)
                 self.tiroirs["boss"].append(nouveau_boss)
         
                 # IMPORTANT : On recrée le moteur physique pour que "tron" devienne solide
@@ -479,7 +474,7 @@ class MonJeu(arcade.View):
                     self.fleur,
                     platforms=self.scene["tron"], # On ajoute le calque aux murs
                     gravity_constant=GRAVITE,
-                    walls=self.scene["collisions"]
+                    walls=self.tiroirs["murs"]
                 )
 
         # --- GESTION DES DÉGÂTS ---
@@ -620,7 +615,7 @@ class MonJeu(arcade.View):
         
                 # 2. RENDRE LE TRON SOLIDE
                 murs_complets = arcade.SpriteList()
-                murs_complets.extend(self.scene["collisions"])
+                murs_complets.extend(self.tiroirs["murs"])
                 murs_complets.extend(self.scene["tron"])
                     
                 # 3. On met à jour le moteur physique avec les vrais murs
@@ -632,14 +627,14 @@ class MonJeu(arcade.View):
         
         for boss in self.tiroirs["boss"]:
             # On lui donne la liste des collisions de la map pour qu'il ne traverse pas le sol
-            boss.update_boss(delta_time, self.tiroirs["projectiles_ennemis"], self.scene["collisions"])
+            boss.update_boss(delta_time, self.tiroirs["projectiles_ennemis"], self.tiroirs["murs"])
 
         # --- MISE A JOUR DES ENTITES DU BOSS ---
         if self.boss_actif and "boss" in self.tiroirs:
             
             # 1. creation des murs pour le boss
             murs_pour_boss = arcade.SpriteList()
-            murs_pour_boss.extend(self.scene["collisions"])
+            murs_pour_boss.extend(self.tiroirs["murs"])
             if "tron" in self.scene:
                 murs_pour_boss.extend(self.scene["tron"])
 
@@ -667,7 +662,7 @@ class MonJeu(arcade.View):
                 # le calque tron redevient traversable
                 self.moteur_physique = arcade.PhysicsEnginePlatformer(
                     self.fleur,
-                    walls=self.scene["collisions"],
+                    walls=self.tiroirs["murs"],
                     gravity_constant=GRAVITE
                 )
 
@@ -701,19 +696,21 @@ class MonJeu(arcade.View):
                 self.moteur_physique = arcade.PhysicsEnginePlatformer(
                     self.fleur,
                     gravity_constant=GRAVITE,
-                    walls=[self.scene["collisions"]]
+                    walls=[self.tiroirs["murs"]]
                 )
-                
+        self.camera_sprites.position = (self.fleur.center_x, self.fleur.center_y)
+
     def on_draw(self):
         # 1. On nettoie l'écran (très important pour ne pas avoir d'images fantômes)
         self.clear()
         
         # --- A. COUCHE "MONDE" (Tout ce qui bouge avec le joueur) ---
         self.camera_sprites.use() 
+        self.camera_jeu.use()
         
-        # On dessine la map (Sol, décors) UNE SEULE FOIS ici
-        # self.scene.draw()
-        
+        if self.scene:
+            self.scene.draw()
+
         # On dessine les entités par-dessus
         if "pnjs" in self.tiroirs: self.tiroirs["pnjs"].draw()
         if "ennemis" in self.tiroirs: self.tiroirs["ennemis"].draw()
@@ -733,12 +730,14 @@ class MonJeu(arcade.View):
         self.hud.dessiner_inventaire_et_monnaie(self.fleur)
         self.chat.dessiner()
         self.shop.dessiner()
-
+        # 3. ON DESSINE LE JOUEUR EN DERNIER (pour qu'il soit devant tout le monde)
+        if "joueur" in self.tiroirs:
+            self.tiroirs["joueur"].draw()
         # --- C. DEBUG ---
         if self.show_debug:
             debug_txt = f"X: {int(self.fleur.center_x)} Y: {int(self.fleur.center_y)}\nFPS: {int(arcade.get_fps())}"
             arcade.draw_text(debug_txt, 20, HAUTEUR - 60, arcade.color.GREEN, 12, multiline=True, width=400)
-        
+            
 def main():
     window = arcade.Window(LARGEUR, HAUTEUR, TITRE)
     intro = CinematiqueView()

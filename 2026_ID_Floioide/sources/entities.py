@@ -37,7 +37,7 @@ class Joueur(EntiteAnimee):
         self.index_inventaire = 0
 
         # initialisation avec scale 0.4
-        super().__init__(x, y, scale=0.4)
+        super().__init__(x, y, scale=0.1)
         
         # dossiers des images
         doss_p = os.path.join(DOSSIER_DATA, "player")
@@ -478,9 +478,10 @@ class ProjectileBossBaton(arcade.Sprite):
         self.frame = 0
         self.timer_anim = 0
 
-    def update(self):
-        self.center_x += self.change_x
-        self.center_y += self.change_y
+    def update(self, delta_time: float = 1/60):
+        # Ton code actuel de mouvement
+        self.center_x += self.change_x * delta_time
+        self.center_y += self.change_y * delta_time
 
         # animation du projectile
         self.timer_anim += 1/60
