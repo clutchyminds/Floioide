@@ -424,16 +424,34 @@ class EntiteBoss(arcade.Sprite):
         self.pos_x_base = x
 
     def dessiner_barre_vie(self):
-        # dessine la jauge rouge et verte au dessus du sprite
-        largeur_barre = 50
-        hauteur_barre = 5
-        y_barre = self.top + 10
-        ratio = max(0, self.pv / self.pv_max)
-        
-        # fond rouge
-        arcade.draw_rect_filled(arcade.rect.XYWH(self.center_x, y_barre, largeur_barre, hauteur_barre), arcade.color.RED)
-        # vie verte
-        arcade.draw_rect_filled(arcade.rect.XYWH(self.center_x - (largeur_barre * (1 - ratio) / 2), y_barre, largeur_barre * ratio, hauteur_barre), arcade.color.GREEN)
+        """ Affiche la barre de vie au-dessus du boss (Version Arcade 3.0) """
+        if self.pv > 0:
+            largeur_totale = 60
+            hauteur = 8
+            # Calcul du ratio de vie (évite la division par zéro si pv_max n'existe pas)
+            max_pv = getattr(self, "pv_max", self.pv)
+            ratio = self.pv / max_pv
+            
+            # 1. Créer les objets rectangles (LBWH = Left, Bottom, Width, Height)
+            # Fond rouge
+            fond_rect = arcade.LBWH(
+                self.center_x - largeur_totale / 2, 
+                self.top + 15, 
+                largeur_totale, 
+                hauteur
+            )
+            
+            # Barre verte
+            vie_rect = arcade.LBWH(
+                self.center_x - largeur_totale / 2, 
+                self.top + 15, 
+                largeur_totale * ratio, 
+                hauteur
+            )
+
+            # 2. Dessiner les rectangles avec les nouvelles fonctions
+            arcade.draw_rect_filled(fond_rect, arcade.color.RED)
+            arcade.draw_rect_filled(vie_rect, arcade.color.GREEN)
 
     def appliquer_physique(self, murs):
         # gere la gravite et les collisions basiques avec la hit box du decor
@@ -457,146 +475,184 @@ class EntiteBoss(arcade.Sprite):
                 self.left = mur.right
             self.change_x = 0
 
-class ProjectileBossBaton(arcade.Sprite):
-    def __init__(self, x, y, cible_x, cible_y):
-        chemin_base = os.path.join(DOSSIER_BOSS, "Boss arbre")
-        super().__init__(os.path.join(chemin_base, "Attaque.1.png"), scale=1.0)
+# --- CLASSE DE BASE POUR LA PHYSIQUE ET LA VIE ---
+class EntiteBossTron(arcade.Sprite):
+    def __init__(self, scale=1.0):
+        super().__init__(scale=scale) # Initialisation vide pour éviter le bug "multiple values"
+        self.pv_max = 0 # Sera défini par les phases
+        self.invul_timer = 0
+
+    def appliquer_physique(self, murs):
+        # Gravité
+        self.change_y -= GRAVITE
+        self.center_y += self.change_y
+        hit_list = arcade.check_for_collision_with_list(self, murs)
+        for mur in hit_list:
+            if self.change_y < 0:
+                self.bottom = mur.top
+                self.change_y = 0
+            elif self.change_y > 0:
+                self.top = mur.bottom
+                self.change_y = 0
+                
+        # Mouvement X
+        self.center_x += self.change_x
+        hit_list = arcade.check_for_collision_with_list(self, murs)
+        for mur in hit_list:
+            if self.change_x > 0: self.right = mur.left
+            elif self.change_x < 0: self.left = mur.right
+            self.change_x = 0
+
+    def dessiner_barre_vie(self):
+        """ Affiche la barre de vie au-dessus du boss (Version Arcade 3.0) """
+        if self.pv > 0:
+            largeur_totale = 60
+            hauteur = 8
+            
+            # 1. On crée l'objet rectangle pour le FOND (Rouge)
+            # arcade.LBWH signifie : Left, Bottom, Width, Height
+            rect_fond = arcade.LBWH(
+                self.center_x - largeur_totale / 2, 
+                self.top + 15, 
+                largeur_totale, 
+                hauteur
+            )
+            # On dessine en passant l'objet + la couleur (2 arguments seulement)
+            arcade.draw_rect_filled(rect_fond, arcade.color.RED)
+
+            # 2. On crée l'objet rectangle pour la VIE (Verte)
+            max_p = getattr(self, "pv_max", self.pv)
+            ratio = self.pv / max_p
+            
+            rect_vie = arcade.LBWH(
+                self.center_x - largeur_totale / 2, 
+                self.top + 15, 
+                largeur_totale * ratio, 
+                hauteur
+            )
+            arcade.draw_rect_filled(rect_vie, arcade.color.GREEN)
+
+    def update_boss(self, delta_time, liste_projectiles, murs):
+        """ Gère le temps de sécurité pour les dégâts """
+        if self.invul_timer > 0:
+            self.invul_timer -= delta_time
+
+# --- PROJECTILE (LE BATON) ---
+class ProjectileArbre(arcade.Sprite):
+    def __init__(self, x, y, joueur):
+        super().__init__()
         self.center_x = x
         self.center_y = y
-        self.degats = 4
-        self.vitesse = 6
+        self.degats = 4  # CHANGEMENT : 4 points de dégâts
+        self.duree_vie = 5.0
+        self.temps_ecoule = 0.0
+        
+        self.timer_attaque = 0
 
-        # calcul de la direction vers le joueur
-        angle = math.atan2(cible_y - y, cible_x - x)
-        self.change_x = math.cos(angle) * self.vitesse
-        self.change_y = math.sin(angle) * self.vitesse
-
-        # chargement des images d animation
-        self.textures_anim = []
-        for i in range(1, 6):
-            self.textures_anim.append(arcade.load_texture(os.path.join(chemin_base, f"Attaque.{i}.png")))
-        self.frame = 0
-        self.timer_anim = 0
+        chemin_base = os.path.join(DOSSIER_DATA, "boss", "boss arbre")
+        self.textures = [arcade.load_texture(os.path.join(chemin_base, f"Attaque.{i}.png")) for i in range(1, 6)]
+        self.texture = self.textures[0]
+        
+        angle = math.atan2(joueur.center_y - self.center_y, joueur.center_x - self.center_x)
+        self.change_x = math.cos(angle) * 8 # Rapide
+        self.change_y = math.sin(angle) * 8
 
     def update(self, delta_time: float = 1/60):
-        # Ton code actuel de mouvement
-        self.center_x += self.change_x * delta_time
-        self.center_y += self.change_y * delta_time
+        if self.timer_attaque >= 5.0:
+            self.timer_attaque = 0
 
-        # animation du projectile
-        self.timer_anim += 1/60
-        if self.timer_anim > 0.1:
-            self.timer_anim = 0
-            self.frame = (self.frame + 1) % len(self.textures_anim)
-            self.texture = self.textures_anim[self.frame]
+        self.center_x += self.change_x
+        self.center_y += self.change_y
+        self.temps_ecoule += delta_time
+        frame = int((self.temps_ecoule % 0.5) / 0.1)
+        if frame < 5: self.texture = self.textures[frame]
+        if self.temps_ecoule >= self.duree_vie: self.remove_from_sprite_lists()
 
-# --- boss arbre ---
-
-class BossArbreP1(EntiteBoss):
+# --- PHASES ---
+class BossArbreP1(EntiteBossTron):
     def __init__(self, x, y, joueur):
-        chemin_image = os.path.join(DOSSIER_BOSS, "Boss arbre", "P1.png")
-        super().__init__(x, y, chemin_image)
+        super().__init__(scale=1.0)
+        self.texture = arcade.load_texture(os.path.join(DOSSIER_DATA, "boss", "boss arbre", "P1.png"))
+        self.center_x = x
+        self.center_y = y
         self.joueur = joueur
         self.pv = 5
         self.pv_max = 5
-        self.degats = 4
-        self.timer_action = random.uniform(3, 6)
+        self.timer_tir = 0.0
+        self.timer_attaque = 0
 
     def update_boss(self, delta_time, liste_projectiles, murs):
-        # la phase 1 ne bouge pas, pas besoin d appliquer la physique
-        if self.etat == "idle":
-            self.timer_action -= delta_time
-            if self.timer_action <= 0:
-                self.etat = "tremble"
-                self.timer_tremblement = 1.0
-                self.pos_x_base = self.center_x
+        super().update_boss(delta_time, liste_projectiles, murs)
+        self.appliquer_physique(murs)
 
-        elif self.etat == "tremble":
-            self.timer_tremblement -= delta_time
-            # effet de tremblement gauche droite
-            self.center_x = self.pos_x_base + random.uniform(-5, 5)
+        # Lancer le bâton toutes les 5 secondes
+        self.timer_tir += delta_time
+        if self.timer_tir >= 5.0:
+            self.timer_tir = 0
+            self.lancer_baton(liste_projectiles)
 
-            if self.timer_tremblement <= 0:
-                self.center_x = self.pos_x_base
-                self.etat = "idle"
-                self.timer_action = random.uniform(3, 6)
-                # tire le projectile
-                baton = ProjectileBossBaton(self.center_x, self.center_y, self.joueur.center_x, self.joueur.center_y)
-                liste_projectiles.append(baton)
+        self.appliquer_physique(murs)
+        if self.invul_timer > 0:
+            self.invul_timer -= delta_time
 
     def au_deces(self):
-        # quand la phase 1 meurt, on spawn 2 entites de phase 2
-        return [
-            BossArbreP2(self.center_x - 64, self.center_y, self.joueur),
-            BossArbreP2(self.center_x + 64, self.center_y, self.joueur)
-        ]
+        # Libère deux P2
+        return [BossArbreP2(self.center_x - 40, self.center_y, self.joueur),
+                BossArbreP2(self.center_x + 40, self.center_y, self.joueur)]
 
-class BossArbreP2(EntiteBoss):
+class BossArbreP2(EntiteBossTron):
     def __init__(self, x, y, joueur):
-        chemin_image = os.path.join(DOSSIER_BOSS, "Boss arbre", "P2.png")
-        super().__init__(x, y, chemin_image)
-        self.tex_idle = arcade.load_texture(chemin_image)
-        self.tex_saut = arcade.load_texture(os.path.join(DOSSIER_BOSS, "Boss arbre", "P2.saut.png"))
+        super().__init__(scale=1.0)
+        chemin_base = os.path.join(DOSSIER_DATA, "boss", "boss arbre")
+        self.tex_sol = arcade.load_texture(os.path.join(chemin_base, "P2.png"))
+        self.tex_saut = arcade.load_texture(os.path.join(chemin_base, "P2.saut.png"))
+        self.texture = self.tex_sol
+        self.center_x, self.center_y = x, y
         self.joueur = joueur
         self.pv = 3
         self.pv_max = 3
-        self.degats = 2
-        self.timer_action = random.uniform(2, 5)
+        self.degats = 3
+        self.timer_saut = 0.0
 
     def update_boss(self, delta_time, liste_projectiles, murs):
         self.appliquer_physique(murs)
-
-        if self.etat == "idle":
-            self.texture = self.tex_idle
+        if self.invul_timer > 0:
+            self.invul_timer -= delta_time
+        if self.change_y == 0:
+            self.texture = self.tex_sol
             self.change_x = 0
-            self.timer_action -= delta_time
-            if self.timer_action <= 0:
-                self.etat = "tremble"
-                self.timer_tremblement = 1.0
-                self.pos_x_base = self.center_x
-
-        elif self.etat == "tremble":
-            self.timer_tremblement -= delta_time
-            self.center_x = self.pos_x_base + random.uniform(-4, 4)
-
-            if self.timer_tremblement <= 0:
-                self.center_x = self.pos_x_base
-                self.etat = "saut"
-                self.texture = self.tex_saut
-                # grand bond vers le joueur
-                self.change_y = 15
-                direction = 1 if self.joueur.center_x > self.center_x else -1
-                self.change_x = direction * 8
-
-        elif self.etat == "saut":
-            # si on atterrit au sol
-            if self.change_y == 0:
-                self.etat = "idle"
-                self.timer_action = random.uniform(2, 5)
+            self.timer_saut += delta_time
+            if self.timer_saut >= 2.0:
+                self.timer_saut = 0.0
+                self.change_y = 12
+                self.change_x = 5 if self.joueur.center_x > self.center_x else -5
+        else:
+            self.texture = self.tex_saut
 
     def au_deces(self):
-        # quand une phase 2 meurt, on spawn 1 entite de phase 3
-        return [BossArbreP3(self.center_x, self.center_y, self.joueur)]
+        # Libère deux P3 (donc 4 au total si les deux P2 meurent)
+        return [BossArbreP3(self.center_x - 20, self.center_y, self.joueur),
+                BossArbreP3(self.center_x + 20, self.center_y, self.joueur)]
 
-class BossArbreP3(EntiteBoss):
+class BossArbreP3(EntiteBossTron):
     def __init__(self, x, y, joueur):
-        chemin_image = os.path.join(DOSSIER_BOSS, "Boss arbre", "P3.png")
-        super().__init__(x, y, chemin_image)
+        super().__init__(scale=0.6)
+        self.texture = arcade.load_texture(os.path.join(DOSSIER_DATA, "boss", "boss arbre", "P3.png"))
+        self.center_x, self.center_y = x, y
         self.joueur = joueur
         self.pv = 1
         self.pv_max = 1
         self.degats = 1
-        self.timer_saut = 0.5
+        self.timer_saut = 0.0
 
     def update_boss(self, delta_time, liste_projectiles, murs):
+        if self.invul_timer > 0:
+            self.invul_timer -= delta_time
         self.appliquer_physique(murs)
-        self.timer_saut -= delta_time
-
-        # petit saut periodique
-        if self.timer_saut <= 0 and self.change_y == 0:
-            self.change_y = 8
-            direction = 1 if self.joueur.center_x > self.center_x else -1
-            self.change_x = direction * 4
-            self.timer_saut = random.uniform(0.5, 1.5)
-        elif self.change_y == 0:
+        if self.change_y == 0:
             self.change_x = 0
+            self.timer_saut += delta_time
+            if self.timer_saut >= 1.5:
+                self.timer_saut = 0.0
+                self.change_y = 8
+                self.change_x = 4 if self.joueur.center_x > self.center_x else -4
