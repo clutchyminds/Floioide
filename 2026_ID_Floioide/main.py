@@ -1,3 +1,5 @@
+from cmath import rect
+
 import arcade
 import random
 import os
@@ -82,10 +84,8 @@ class CinematiqueView(arcade.View):
         
         # Bandeau de texte noir en bas
         # Ici on utilise directement LBWH qui est beaucoup plus simple que Rect
-        arcade.draw_rect_filled(
-            arcade.LBWH(0, 0, LARGEUR, 150),
-            arcade.color.BLACK_BEAN
-        )
+        rect = arcade.LBWH(0, 0, LARGEUR, 150)
+        arcade.draw_rect_filled(rect, arcade.color.BROWN)
         
         # Affichage du texte
         arcade.draw_text(
@@ -121,6 +121,8 @@ class MonJeu(arcade.View):
 
         self.scene = None
         
+        self.etat_boss_tron = 0
+
         self.camera_sprites = arcade.camera.Camera2D()
         self.camera_gui = arcade.camera.Camera2D()
 
@@ -457,25 +459,6 @@ class MonJeu(arcade.View):
                 self.lecteur_pas = None
 
         self.tiroirs["ennemis"].update_animation(delta_time)
-        collision_tron = arcade.check_for_collision_with_list(self.fleur, self.tiroirs["tron"])
-        # --- LOGIQUE DÉCLENCHEMENT BOSS ---
-        # On ne vérifie la collision QUE si le boss n'est pas déjà apparu
-        if collision_tron and not self.boss_actif:
-            # Sécurité supplémentaire : on vérifie si la liste est VRAIMENT vide
-            if len(self.tiroirs["boss"]) == 0:
-                print("SPAWN DU BOSS UNIQUE")
-                self.boss_actif = True  # ON LE PASSE À TRUE IMMÉDIATEMENT
-                
-                nouveau_boss = BossArbreP1(2000, 1800, self.fleur)
-                self.tiroirs["boss"].append(nouveau_boss)
-        
-                # IMPORTANT : On recrée le moteur physique pour que "tron" devienne solide
-                self.moteur_physique = arcade.PhysicsEnginePlatformer(
-                    self.fleur,
-                    platforms=self.scene["tron"], # On ajoute le calque aux murs
-                    gravity_constant=GRAVITE,
-                    walls=self.tiroirs["murs"]
-                )
 
         # --- GESTION DES DÉGÂTS ---
         self.timer_degats += delta_time
@@ -515,29 +498,6 @@ class MonJeu(arcade.View):
         # Anime les PNJ
         for pnj in self.tiroirs["pnjs"]:
             pnj.update_animation(delta_time)
-
-        # --- GESTION DES DÉGÂTS SUR LE BOSS ET MONNAIE ---
-        # (Remplace ton appel à gerer_collisions pour les boss par ceci)
-        for tir in self.tiroirs["tirs"]:
-            ennemis_touches = arcade.check_for_collision_with_list(tir, self.tiroirs["ennemis"])
-            if ennemis_touches:
-                tir.remove_from_sprite_lists()
-                for ennemi in ennemis_touches:
-                    if isinstance(ennemi, Boss):
-                        ennemi.vie -= 10
-                        self.fleur.monnaie += 1  # +1 par tap
-                        if ennemi.vie <= 0:
-                            ennemi.remove_from_sprite_lists()
-                            self.fleur.monnaie += 10 # +10 au kill
-                    else:
-                        ennemi.remove_from_sprite_lists() # Les petits mobs meurent direct
-        if self.fleur.energie < 100:
-            self.fleur.timer_energie += delta_time
-            if self.fleur.timer_energie >= 2.0: # Toutes les 2 secondes
-                self.fleur.energie += 25
-                self.fleur.timer_energie = 0
-                if self.fleur.energie > 100:
-                    self.fleur.energie = 100
 
         # --- LOGIQUE DES MOBS ---
         mobs_sol = sum(1 for e in self.tiroirs["ennemis"] if hasattr(e, "volant") and not e.volant)
@@ -599,105 +559,82 @@ class MonJeu(arcade.View):
                 tir.remove_from_sprite_lists()
 
                 self.fleur.dernier_coup_timer += delta_time
-
-        # --- gestion du boss arbre ---
+        # =========================================================
+        # --- LOGIQUE DU BOSS TRON ---
+        # =========================================================
         
-        if not self.boss_actif and "tron" in self.scene:
-            hit_list = arcade.check_for_collision_with_list(self.fleur, self.scene["tron"])
-    
-            if len(hit_list) > 0:
-                self.boss_actif = True
-                print("Boss activé !")
-        
-                # 1. Créer le boss
-                nouveau_boss = BossArbreP1(4094, 2669, self.fleur)
-                self.tiroirs["boss"].append(nouveau_boss)
-        
-                # 2. RENDRE LE TRON SOLIDE
-                murs_complets = arcade.SpriteList()
-                murs_complets.extend(self.tiroirs["murs"])
-                murs_complets.extend(self.scene["tron"])
-                    
-                # 3. On met à jour le moteur physique avec les vrais murs
-                self.moteur_physique = arcade.PhysicsEnginePlatformer(
-                    self.fleur,
-                    walls=murs_complets, # utilise walls ici
-                    gravity_constant=GRAVITE
-                )
-        
-        for boss in self.tiroirs["boss"]:
-            # On lui donne la liste des collisions de la map pour qu'il ne traverse pas le sol
-            boss.update_boss(delta_time, self.tiroirs["projectiles_ennemis"], self.tiroirs["murs"])
-
-        # --- MISE A JOUR DES ENTITES DU BOSS ---
-        if self.boss_actif and "boss" in self.tiroirs:
-            
-            # 1. creation des murs pour le boss
-            murs_pour_boss = arcade.SpriteList()
-            murs_pour_boss.extend(self.tiroirs["murs"])
-            if "tron" in self.scene:
-                murs_pour_boss.extend(self.scene["tron"])
-
-            # 2. update des sprites boss
-            for boss in self.tiroirs["boss"]:
-                # le boss recoit les murs pour ne plus passer a travers le sol
-                boss.update_boss(delta_time, self.tiroirs["projectiles_ennemis"], murs_pour_boss)
+        # 1. DÉCLENCHEMENT DU BOSS
+        if "tron" in self.tiroirs and self.etat_boss_tron == 0:
+            if arcade.check_for_collision_with_list(self.fleur, self.tiroirs["tron"]):
+                self.etat_boss_tron = 1
+                # CHANGEMENT : Spawn aux coordonnées demandées
+                boss_p1 = BossArbreP1(4000, 2800, self.fleur) 
+                if "boss" not in self.tiroirs: self.tiroirs["boss"] = arcade.SpriteList()
+                self.tiroirs["boss"].append(boss_p1)
                 
-                # si le boss touche le joueur au corps a corps
-                if arcade.check_for_collision(self.fleur, boss):
-                    self.fleur.vie -= boss.degats
-                    self.fleur.center_x += 30 if self.fleur.center_x > boss.center_x else -30
 
-            # 3. update des projectiles (le baton)
-            self.tiroirs["projectiles_ennemis"].update()
+        # 2. GESTION PENDANT LE COMBAT
+        elif self.etat_boss_tron == 1:
+            
+            # --- Mise à jour des entités Boss ---
+            for boss in self.tiroirs["boss"]:
+                # On met à jour sa logique (gravité, tir, saut)
+                boss.update_boss(delta_time, self.tiroirs["projectiles_ennemis"], self.tiroirs["murs"])
+                
+                # Dégâts de contact (seulement pour P2 et P3 qui ont un attribut 'degats')
+                if hasattr(boss, "degats") and arcade.check_for_collision(self.fleur, boss):
+                    self.fleur.vie -= boss.degats
+                    # Recul du joueur
+                    self.fleur.center_x += 40 if self.fleur.center_x > boss.center_x else -40
+
+            # --- Mise à jour des projectiles (Attaques de P1) ---
+            self.tiroirs["projectiles_ennemis"].update(delta_time)
             for proj in self.tiroirs["projectiles_ennemis"]:
                 if arcade.check_for_collision(self.fleur, proj):
                     self.fleur.vie -= proj.degats
                     proj.remove_from_sprite_lists()
 
-            # 4. si le boss est totalement vaincu
-            if len(self.tiroirs["boss"]) == 0:
-                self.boss_actif = False
-                self.tiroirs["projectiles_ennemis"].clear()
-                # le calque tron redevient traversable
-                self.moteur_physique = arcade.PhysicsEnginePlatformer(
-                    self.fleur,
-                    walls=self.tiroirs["murs"],
-                    gravity_constant=GRAVITE
-                )
-
-            # 3. le joueur tape le boss
-            if "attaques" in self.tiroirs and self.tiroirs["attaques"]:
+            # --- Le Joueur attaque le Boss ---
+            if "attaques" in self.tiroirs:
                 for attaque in self.tiroirs["attaques"]:
-                    if not hasattr(attaque, "deja_touche_boss"):
-                        attaque.deja_touche_boss = set()
-
-                    boss_touches = arcade.check_for_collision_with_list(attaque, self.liste_boss)
+                    boss_touches = arcade.check_for_collision_with_list(attaque, self.tiroirs["boss"])
                     for boss in boss_touches:
-                        if boss not in attaque.deja_touche_boss:
-                            boss.pv -= 1 # 1 de degat inflige par ton attaque
-                            attaque.deja_touche_boss.add(boss)
+                        # Gérer les dégâts de l'attaque du joueur ici
+                        boss.pv -= 1 
+                        
+                        # Si le boss meurt
+                        if boss.pv <= 0:
+                            # S'il a une phase suivante (au_deces retourne une liste)
+                            if hasattr(boss, "au_deces"):
+                                nouveaux_mobs = boss.au_deces()
+                                for mob in nouveaux_mobs:
+                                    self.tiroirs["boss"].append(mob)
+                            boss.remove_from_sprite_lists()
 
-                            # si le boss ou son entite meurt
+            # --- Fin du combat ---
+            if len(self.tiroirs["boss"]) == 0:
+                print("Le Boss Tron est totalement détruit !")
+                self.etat_boss_tron = 2
+                self.tiroirs["projectiles_ennemis"].clear()
+
+        # --- Le Joueur attaque le Boss ---
+            if "attaques" in self.tiroirs:
+                for attaque in self.tiroirs["attaques"]:
+                    boss_touches = arcade.check_for_collision_with_list(attaque, self.tiroirs["boss"])
+                    for boss in boss_touches:
+                        # On vérifie si l'attaque n'a pas déjà touché ce boss pour cette frame
+                        if not hasattr(attaque, "deja_touche_boss"): attaque.deja_touche_boss = set()
+                        
+                        if boss not in attaque.deja_touche_boss:
+                            boss.pv -= 1 # 1 point de dégât
+                            attaque.deja_touche_boss.add(boss)
+                            
                             if boss.pv <= 0:
-                                # on regarde s il a une phase suivante (au_deces)
                                 if hasattr(boss, "au_deces"):
-                                    nouvelles_entites = boss.au_deces()
-                                    for entite in nouvelles_entites:
-                                        self.liste_boss.append(entite)
+                                    for nouveau in boss.au_deces():
+                                        self.tiroirs["boss"].append(nouveau)
                                 boss.remove_from_sprite_lists()
 
-            # 4. verification de la fin totale du boss
-            if len(self.liste_boss) == 0:
-                self.boss_actif = False
-                self.liste_projectiles_boss.clear()
-                
-                # le boss est mort, le calque tron redevient non solide
-                self.moteur_physique = arcade.PhysicsEnginePlatformer(
-                    self.fleur,
-                    gravity_constant=GRAVITE,
-                    walls=[self.tiroirs["murs"]]
-                )
         self.camera_sprites.position = (self.fleur.center_x, self.fleur.center_y)
 
     def on_draw(self):
@@ -717,7 +654,7 @@ class MonJeu(arcade.View):
         if "boss" in self.tiroirs:
             self.tiroirs["boss"].draw()
             for b in self.tiroirs["boss"]:
-                b.dessiner_barre_vie()
+                b.dessiner_barre_vie() # Appelle la fonction qu'on a créée dans EntiteBossTron
         
         if "projectiles_ennemis" in self.tiroirs: self.tiroirs["projectiles_ennemis"].draw()
         if "attaques" in self.tiroirs: self.tiroirs["attaques"].draw()
