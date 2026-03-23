@@ -609,7 +609,7 @@ class BossArbreP2(EntiteBossTron):
         self.texture = self.tex_sol
         self.center_x, self.center_y = x, y
         self.joueur = joueur
-        self.pv = 50a
+        self.pv = 50
         self.pv_max = 50
         self.degats = 3
         self.timer_saut = 0.0
