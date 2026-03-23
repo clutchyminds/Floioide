@@ -1,4 +1,3 @@
-from cmath import rect
 
 import arcade
 import random
@@ -69,6 +68,7 @@ class CinematiqueView(arcade.View):
                 self.index_lettre += 1
                 self.texte_affiche = self.textes[self.scene_actuelle - 1][:self.index_lettre]
                 self.timer_texte = 0
+        
 
     def on_draw(self):
         self.clear()
@@ -172,6 +172,8 @@ class MonJeu(arcade.View):
         self.son_saut = arcade.load_sound(os.path.join(DOSSIER_DATA, "sounds", "saut.wav"))
         self.son_pas = arcade.load_sound(os.path.join(DOSSIER_DATA, "sounds", "deplacement.ogg"))
         self.lecteur_pas = None 
+
+        self.cooldown_shop = 0.0
 
         self.show_debug = False
         self.fps = 0
@@ -309,6 +311,8 @@ class MonJeu(arcade.View):
         # 1. Ajustement par rapport à la caméra
         # Si tu utilises Camera2D dans Arcade 3.0, c'est bottom_left.x !
         # Si tu utilises l'ancienne Camera, c'est position.x
+        world_x = x + self.camera_jeu.position.x
+        world_y = y + self.camera_jeu.position.y
         self.shop.update_souris(x, y)
 
         try:
@@ -326,23 +330,49 @@ class MonJeu(arcade.View):
         pnjs_touches = arcade.get_sprites_at_point((mouse_x, mouse_y), self.tiroirs.get("pnjs", arcade.SpriteList()))
         for pnj in pnjs_touches:
             pnj.est_survole = True
+        
+        world_x = x + self.camera_jeu.position.x
+        world_y = y + self.camera_jeu.position.y
+
+        for pnj in self.tiroirs["pnjs"]:
+            # Si la souris est dans la zone du PNJ
+            if pnj.collides_with_point((world_x, world_y)):
+                pnj.mouse_over = True
+            else:
+                pnj.mouse_over = False
 
     def on_mouse_press(self, x, y, button, modifiers):
-        # --- CLIC DROIT : INTERACTION PNJ ---
-        if button == arcade.MOUSE_BUTTON_RIGHT:
-            # On convertit les coordonnées de l'écran en coordonnées du "monde"
-            x_monde = x + self.camera_jeu.position[0]
-            y_monde = y + self.camera_jeu.position[1]
+        # --- A. SI LE SHOP EST DÉJÀ OUVERT ---
+        if self.shop.ouvert:
+            res = self.shop.on_mouse_press(x, y)
             
+            if res == "FERMER":
+                self.shop.ouvert = False
+                self.cooldown_shop = 2.0 # On attend 2s
+            
+            elif isinstance(res, dict): # Si c'est un dictionnaire, c'est un item
+                if self.fleur.monnaie >= res["prix"]:
+                    self.fleur.monnaie -= res["prix"]
+                    self.chat.ajouter_message(f"Achat : {res['nom']}", arcade.color.GREEN)
+                else:
+                    self.chat.ajouter_message("Pas assez d'argent !", arcade.color.RED)
+            return
+
+        # --- B. SI LE SHOP EST FERMÉ (Détection du PNJ) ---
+        if button == arcade.MOUSE_BUTTON_RIGHT:
+            # IMPORTANT : Conversion des coordonnées écran -> monde
+            world_x = x + self.camera_jeu.position.x
+            world_y = y + self.camera_jeu.position.y
+            
+            # On boucle sur les PNJs
             if "pnjs" in self.tiroirs:
-                pnj_clique = arcade.get_sprites_at_point((x_monde, y_monde), self.tiroirs["pnjs"])
-                if pnj_clique:
-                    distance = math.dist((self.fleur.center_x, self.fleur.center_y),
-                                         (pnj_clique[0].center_x, pnj_clique[0].center_y))
-                    if distance < 150:
-                        self.shop.actif = not self.shop.actif
-                    else:
-                        self.chat.ajouter_message("Le PNJ est trop loin !", couleur=arcade.color.RED)
+                for pnj in self.tiroirs["pnjs"]:
+                    # On vérifie si le clic est SUR le PNJ
+                    if pnj.collides_with_point((world_x, world_y)):
+                        if pnj.est_marchand:
+                            self.shop.ouvert = True
+                            print(f"Shop ouvert via {pnj.nom}")
+                            return
 
         # --- CLIC GAUCHE : ATTAQUE ---
         elif button == arcade.MOUSE_BUTTON_LEFT:
@@ -369,23 +399,22 @@ class MonJeu(arcade.View):
         if self.fleur.timer_dash > 0:
             self.fleur.timer_dash -= delta_time
 
-        # Dans main.py, méthode on_update
-        # --- LOGIQUE FONTAINE (EAU + VIE) ---
-        if arcade.check_for_collision_with_list(self.fleur, self.tiroirs["fontaines"]):
-            # 1. Recharge d'eau (5% par seconde)
-            self.fleur.eau = min(100, self.fleur.eau + (5 * delta_time))
-    
-            # 2. Recharge de vie (1 PV toutes les 3 secondes)
-            self.timer_soin_fontaine += delta_time
-            if self.timer_soin_fontaine >= 3.0:
+        # --- RÉGÉNÉRATION FONTAINE ---
+        # On vérifie que le calque fontaine existe dans la carte
+        if "fontaine" in self.scene:
+            # On vérifie si la hitbox du joueur touche un bloc d'eau de la fontaine
+            if arcade.check_for_collision_with_list(self.fleur, self.scene["fontaine"]):
+                # Régénération de l'eau (Mana) : +25 par seconde
+                if self.fleur.eau < self.fleur.eau_max:
+                    self.fleur.eau += 25 * delta_time
+                    if self.fleur.eau > self.fleur.eau_max:
+                        self.fleur.eau = self.fleur.eau_max
+                
+                # Régénération de la vie : +1 par seconde
                 if self.fleur.vie < self.fleur.vie_max:
-                    self.fleur.vie += 1
-                    print(f"Soin ! Vie : {self.fleur.vie}")
-                self.timer_soin_fontaine = 0 # Reset du chrono
-        else:
-            # Si on sort de la fontaine, on peut reset le timer 
-            # pour ne pas "stocker" du temps de soin à l'extérieur
-            self.timer_soin_fontaine = 0
+                    self.fleur.vie += 1 * delta_time
+                    if self.fleur.vie > self.fleur.vie_max:
+                        self.fleur.vie = self.fleur.vie_max
 
 
         est_en_train_de_dasher = self.fleur.timer_dash > 6.8 
@@ -573,6 +602,11 @@ class MonJeu(arcade.View):
                 self.tiroirs["boss"].append(boss_p1)
                 
 
+        if "boss" in self.tiroirs:
+            for boss in self.tiroirs["boss"]:
+                # C'est cette ligne qui envoie le "temps" au boss
+                boss.update_boss(delta_time, self.tiroirs["projectiles_ennemis"], self.tiroirs["murs"])
+
         # 2. GESTION PENDANT LE COMBAT
         elif self.etat_boss_tron == 1:
             
@@ -587,12 +621,12 @@ class MonJeu(arcade.View):
                     # Recul du joueur
                     self.fleur.center_x += 40 if self.fleur.center_x > boss.center_x else -40
 
-            # --- Mise à jour des projectiles (Attaques de P1) ---
-            self.tiroirs["projectiles_ennemis"].update(delta_time)
-            for proj in self.tiroirs["projectiles_ennemis"]:
-                if arcade.check_for_collision(self.fleur, proj):
-                    self.fleur.vie -= proj.degats
-                    proj.remove_from_sprite_lists()
+            # On utilise self.fleur (le Sprite) au lieu de la SpriteList
+            projectiles_touches = arcade.check_for_collision_with_list(self.fleur, self.tiroirs["projectiles_ennemis"])
+        
+            for p in projectiles_touches:
+                self.fleur.vie -= 1  # Le joueur perd de la vie
+                p.remove_from_sprite_lists() # Le bâton disparaît
 
             # --- Le Joueur attaque le Boss ---
             if "attaques" in self.tiroirs:
@@ -600,10 +634,10 @@ class MonJeu(arcade.View):
                     boss_touches = arcade.check_for_collision_with_list(attaque, self.tiroirs["boss"])
                     for boss in boss_touches:
                         # Gérer les dégâts de l'attaque du joueur ici
-                        boss.pv -= 1 
+                        boss.vie -= 1 
                         
                         # Si le boss meurt
-                        if boss.pv <= 0:
+                        if boss.vie <= 0:
                             # S'il a une phase suivante (au_deces retourne une liste)
                             if hasattr(boss, "au_deces"):
                                 nouveaux_mobs = boss.au_deces()
@@ -626,14 +660,30 @@ class MonJeu(arcade.View):
                         if not hasattr(attaque, "deja_touche_boss"): attaque.deja_touche_boss = set()
                         
                         if boss not in attaque.deja_touche_boss:
-                            boss.pv -= 1 # 1 point de dégât
+                            boss.vie -= 1 # 1 point de dégât
                             attaque.deja_touche_boss.add(boss)
                             
-                            if boss.pv <= 0:
+                            if boss.vie <= 0:
                                 if hasattr(boss, "au_deces"):
                                     for nouveau in boss.au_deces():
                                         self.tiroirs["boss"].append(nouveau)
                                 boss.remove_from_sprite_lists()
+
+        if "projectiles_ennemis" in self.tiroirs:
+            self.tiroirs["projectiles_ennemis"].update()
+        
+        # --- GESTION DU SHOP (Cooldown et Collision) ---
+        if self.cooldown_shop > 0:
+            self.cooldown_shop -= delta_time
+
+        # Si le shop est fermé et qu'on n'est pas en cooldown
+        if not self.shop.ouvert and self.cooldown_shop <= 0:
+            # Si le joueur touche un PNJ
+            pnjs_touches = arcade.check_for_collision_with_list(self.fleur, self.tiroirs.get("pnjs", arcade.SpriteList()))
+            for pnj in pnjs_touches:
+                if getattr(pnj, "est_marchand", False):
+                    self.shop.ouvert = True
+                    break # On arrête la boucle, le shop est ouvert
 
         self.camera_sprites.position = (self.fleur.center_x, self.fleur.center_y)
 
@@ -666,7 +716,7 @@ class MonJeu(arcade.View):
         self.hud.dessiner(self.fleur)
         self.hud.dessiner_inventaire_et_monnaie(self.fleur)
         self.chat.dessiner()
-        self.shop.dessiner()
+        
         # 3. ON DESSINE LE JOUEUR EN DERNIER (pour qu'il soit devant tout le monde)
         if "joueur" in self.tiroirs:
             self.tiroirs["joueur"].draw()
@@ -674,7 +724,8 @@ class MonJeu(arcade.View):
         if self.show_debug:
             debug_txt = f"X: {int(self.fleur.center_x)} Y: {int(self.fleur.center_y)}\nFPS: {int(arcade.get_fps())}"
             arcade.draw_text(debug_txt, 20, HAUTEUR - 60, arcade.color.GREEN, 12, multiline=True, width=400)
-            
+        if self.shop.ouvert:
+            self.shop.dessiner()
 def main():
     window = arcade.Window(LARGEUR, HAUTEUR, TITRE)
     intro = CinematiqueView()

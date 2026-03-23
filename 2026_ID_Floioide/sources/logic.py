@@ -4,7 +4,7 @@ def gerer_collisions(tiroirs):
     # 1. On vérifie si une attaque est en cours
     if "attaques" not in tiroirs or not tiroirs["attaques"]:
         return
-
+    
     for attaque in tiroirs["attaques"]:
         # 2. On prépare la liste des cibles (mobs + boss)
         # Au lieu de créer une SpriteList compliquée, on utilise check_for_collision_with_lists

@@ -35,44 +35,53 @@ class HUD:
                 tex = self.tex_vie_0
             arcade.draw_texture_rect(tex, arcade.rect.XYWH(x, y, 30, 30))
 
-        # Barres d'Eau et Énergie
-        p_eau = max(0, min(100, (joueur.eau // 25) * 25))
-        p_nrj = max(0, min(100, (joueur.energie // 25) * 25))
-        arcade.draw_texture_rect(self.textures_eau[p_eau], arcade.rect.XYWH(LARGEUR - 100, HAUTEUR - 40, 120, 40))
-        arcade.draw_texture_rect(self.textures_nrj[p_nrj], arcade.rect.XYWH(LARGEUR - 230, HAUTEUR - 40, 120, 40))
+        
 
     def dessiner_inventaire_et_monnaie(self, joueur):
-        """Méthode appelée par main.py pour l'inventaire et l'argent"""
         # 1. Monnaie
-        arcade.draw_texture_rect(self.tex_monnaie, arcade.rect.XYWH(LARGEUR - 330, HAUTEUR - 40, 30, 30))
-        arcade.draw_text(f"{joueur.monnaie}", LARGEUR - 310, HAUTEUR - 50, arcade.color.WHITE, 16, bold=True)
+        # On utilise l'ancienne méthode de dessin qui est 100% stable sur ta version
+        arcade.draw_texture_rect(self.tex_monnaie, arcade.rect.XYWH(LARGEUR - 150, 50, 40, 40))
+        arcade.draw_text(f"{joueur.monnaie} $", LARGEUR - 100, 40, arcade.color.YELLOW, 18, bold=True)
 
-        # 2. Inventaire (4 cases en bas)
-        taille_case = 60
-        espacement = 10
-        x_start = LARGEUR // 2 - ((taille_case * 4 + espacement * 3) // 2)
-        
+        # 2. Les 4 cases d'inventaire
+        # C'est cette boucle 'for' qui manquait et qui causait le crash "UnboundLocalError" !
         for i in range(4):
-            x = x_start + i * (taille_case + espacement)
-            y = 50
+            x_slot = 400 + i * 100
+            y_slot = 50
             
-            # Fond de la case
-            couleur_fond = (0, 0, 0, 150)
-            # CORRECTION : draw_rect_filled au lieu de draw_rectangle_filled
-            arcade.draw_rect_filled(arcade.rect.XYWH(x, y, taille_case, taille_case), couleur_fond)
-            
-            # Bordure (plus épaisse si sélectionnée)
-            epaisseur = 3 if joueur.index_inventaire == i else 1
-            couleur_bord = arcade.color.WHITE if joueur.index_inventaire == i else (200, 200, 200)
-            # CORRECTION : draw_rect_outline au lieu de draw_rectangle_outline
-            arcade.draw_rect_outline(arcade.rect.XYWH(x, y, taille_case, taille_case), couleur_bord, epaisseur)
-            
-            # Contenu de la case (si un objet est présent)
+            # On dessine le rectangle directement avec draw_rectangle_outline
+            # Cela évite le bug de la classe Rect.__new__ missing arguments
+            arcade.draw_rect_outline(arcade.rect.XYWH(x_slot, y_slot, 80, 80), arcade.color.WHITE, 3)
+
+            # Si un objet est présent dans ce slot, on le dessine
             if joueur.inventaire[i] is not None:
-                arcade.draw_texture_rect(joueur.inventaire[i].texture, arcade.rect.XYWH(x, y, 45, 45))
+                # Exemple de code si ton objet a une texture :
+                # arcade.draw_texture_rect(joueur.inventaire[i].texture, arcade.Rect(x_slot, y_slot, 64, 64))
+                pass
+
+        # 3. Barre d'Eau (Mana)
+        # On affiche le texte pour l'eau
+        arcade.draw_text(f"{int(joueur.eau)}", LARGEUR - 320, HAUTEUR - 70, arcade.color.CYAN, 24, bold=True)
+        # On choisit la bonne texture
+        val_eau = max(0, min(100, int(joueur.eau // 25) * 25))
+        arcade.draw_texture_rect(self.textures_eau[val_eau], arcade.rect.XYWH(LARGEUR - 180, HAUTEUR - 60, 200, 60))
+
+        # 4. Barre de Dash (Fleur / NRJ)
+        temps_restant = math.ceil(getattr(joueur, 'timer_dash', 0))
+        
+        if temps_restant >= 5: val_nrj = 0
+        elif temps_restant == 4: val_nrj = 25
+        elif temps_restant == 3: val_nrj = 50
+        elif temps_restant == 2: val_nrj = 75
+        else: val_nrj = 100
+        
+        # On affiche le temps restant
+        if temps_restant > 0:
+            arcade.draw_text(f"{temps_restant}s", LARGEUR - 320, HAUTEUR - 150, arcade.color.ORANGE, 24, bold=True)
+        else:
+            arcade.draw_text("Prêt", LARGEUR - 320, HAUTEUR - 150, arcade.color.GREEN, 20, bold=True)
             
-            # Petit numéro de la case
-            arcade.draw_text(str(i+1), x - 25, y + 15, arcade.color.GRAY, 10)
+        arcade.draw_texture_rect(self.textures_nrj[val_nrj], arcade.rect.XYWH(LARGEUR - 180, HAUTEUR - 140, 200, 60))
 
     def dessiner_vie_boss(self, boss):
         ratio = max(0, boss.vie / boss.vie_max)
@@ -86,14 +95,44 @@ class InterfaceShop:
         self.ouvert = False
         self.souris_x = 0
         self.souris_y = 0
-        self.items = [
-            {"nom": "Soin (25%)", "prix": 10, "type": "SOIN"},
-            {"nom": "Munitions", "prix": 5, "type": "EAU"},
-            {"nom": "Force +1", "prix": 50, "type": "BUFF"}
-        ]
+
+        # --- Chemins des dossiers ---
+        self.chemin_pnj = os.path.join(DOSSIER_DATA, "mobs", "PNJ")
+        self.chemin_items = os.path.join(self.chemin_pnj, "items") # Chemin corrigé
+
+        # --- Chargement du GUI ---
+        try:
+            self.tex_gui = arcade.load_texture(os.path.join(self.chemin_pnj, "gui.png"))
+            self.tex_btn = arcade.load_texture(os.path.join(self.chemin_pnj, "boutton.png"))
+        except:
+            self.tex_gui = None
+            self.tex_btn = None
+
+        # --- Chargement des Items ---
+        self.items = []
+        self.charger_item("Eau de source", 10, "eau.1.png")
+        self.charger_item("Eau minérale", 25, "eau.2.png")
+        self.charger_item("Eau pure", 50, "eau.3.png")
+        self.charger_item("Petit Soin", 40, "Heal.1.png")
+        self.charger_item("Grand Soin", 80, "Heal.2.png")
+
+        # Dimensions
+        self.btn_largeur = 180
+        self.btn_hauteur = 50
+        self.espacement_x = 195
+        self.espacement_y = 70
+
+    def charger_item(self, nom, prix, fichier):
+        path = os.path.join(self.chemin_items, fichier)
+        try:
+            tex = arcade.load_texture(path)
+        except:
+            # Si l'image bug, on met un carré bleu par défaut
+            tex = arcade.make_soft_square_texture(40, arcade.color.BLUE)
+        
+        self.items.append({"nom": nom, "prix": prix, "icon": tex})
 
     def update_souris(self, x, y):
-        """Met à jour la position de la souris pour le survol"""
         self.souris_x = x
         self.souris_y = y
 
@@ -101,51 +140,59 @@ class InterfaceShop:
         if not self.ouvert:
             return
 
-        # 1. Fond sombre semi-transparent
-        arcade.draw_rect_filled(
-            arcade.rect.XYWH(LARGEUR//2, HAUTEUR//2, 500, 400),
-            (0, 0, 0, 220)
-        )
-        arcade.draw_rect_outline(
-            arcade.rect.XYWH(LARGEUR//2, HAUTEUR//2, 500, 400),
-            arcade.color.GOLDENROD, 2
-        )
+        # 1. Fond
+        if self.tex_gui:
+            arcade.draw_texture_rect(self.tex_gui, arcade.rect.XYWH(LARGEUR//2, HAUTEUR//2, 650, 450))
+        else:
+            arcade.draw_rect_filled(arcade.rect.XYWH(LARGEUR//2, HAUTEUR//2, 650, 450), arcade.color.DARK_GRAY)
 
-        arcade.draw_text("BOUTIQUE DU VILLAGE", LARGEUR//2, HAUTEUR//2 + 160, 
-                         arcade.color.GOLD, 22, anchor_x="center", bold=True)
+        # 2. Croix de fermeture (Position précise)
+        croix_x = LARGEUR//2 + 285
+        croix_y = HAUTEUR//2 + 195
+        survol_croix = abs(self.souris_x - croix_x) < 25 and abs(self.souris_y - croix_y) < 25
+        couleur = arcade.color.RED if survol_croix else arcade.color.DARK_RED
+        
+        arcade.draw_rect_filled(arcade.rect.XYWH(croix_x, croix_y, 40, 40), couleur)
+        arcade.draw_text("X", croix_x, croix_y, arcade.color.WHITE, 20, bold=True, anchor_x="center", anchor_y="center")
 
-        # 2. Liste des items
-        for i, item in enumerate(self.items):
-            y_item = HAUTEUR//2 + 50 - (i * 60)
-            
-            # Détection du survol
-            est_survole = (abs(self.souris_x - LARGEUR//2) < 200 and 
-                           abs(self.souris_y - y_item) < 25)
-            
-            couleur_fond = (50, 50, 50, 200) if not est_survole else (100, 100, 100, 255)
-            
-            # Dessin de la ligne d'item
-            arcade.draw_rect_filled(arcade.rect.XYWH(LARGEUR//2, y_item, 400, 50), couleur_fond)
-            
-            # Texte de l'item
-            arcade.draw_text(f"{item['nom']}", LARGEUR//2 - 180, y_item - 10, arcade.color.WHITE, 16)
-            arcade.draw_text(f"{item['prix']} $", LARGEUR//2 + 120, y_item - 10, arcade.color.YELLOW, 16, bold=True)
-
-    def on_mouse_press(self, x, y, joueur, chat):
-        if not self.ouvert:
-            return False
+        # 3. Grille d'items
+        start_x = LARGEUR//2 - 195
+        start_y = HAUTEUR//2 + 80
 
         for i, item in enumerate(self.items):
-            y_item = HAUTEUR//2 + 50 - (i * 60)
-            if abs(x - LARGEUR//2) < 200 and abs(y - y_item) < 25:
-                if joueur.monnaie >= item["prix"]:
-                    joueur.monnaie -= item["prix"]
-                    chat.ajouter_message(f"Achat réussi : {item['nom']}", arcade.color.GREEN)
-                    # Ici on pourra ajouter l'effet de l'objet plus tard
-                else:
-                    chat.ajouter_message("Pas assez d'argent !", arcade.color.RED)
-                return True
-        return False
+            col = i % 3
+            lig = i // 3
+            bx = start_x + (col * self.espacement_x)
+            by = start_y - (lig * self.espacement_y)
+
+            survol = abs(self.souris_x - bx) < self.btn_largeur//2 and abs(self.souris_y - by) < self.btn_hauteur//2
+            teinte = arcade.color.LIGHT_GRAY if survol else arcade.color.WHITE
+
+            if self.tex_btn:
+                arcade.draw_texture_rect(self.tex_btn, arcade.rect.XYWH(bx, by, self.btn_largeur, self.btn_hauteur), color=teinte)
+            
+            # Icône de l'item
+            arcade.draw_texture_rect(item["icon"], arcade.rect.XYWH(bx - 60, by, 40, 40))
+            
+            # Textes
+            arcade.draw_text(item['nom'], bx - 30, by + 5, arcade.color.WHITE, 10, anchor_x="left")
+            arcade.draw_text(f"{item['prix']} $", bx - 30, by - 12, arcade.color.YELLOW, 11, bold=True, anchor_x="left")
+
+    def on_mouse_press(self, x, y):
+        # Vérification Croix
+        cx, cy = LARGEUR//2 + 285, HAUTEUR//2 + 195
+        if abs(x - cx) < 25 and abs(y - cy) < 25:
+            return "FERMER"
+
+        # Vérification Boutons
+        start_x, start_y = LARGEUR//2 - 195, HAUTEUR//2 + 80
+        for i, item in enumerate(self.items):
+            bx = start_x + (i % 3 * self.espacement_x)
+            by = start_y - (i // 3 * self.espacement_y)
+            if abs(x - bx) < self.btn_largeur//2 and abs(y - by) < self.btn_hauteur//2:
+                return item # On retourne l'item acheté
+        
+        return None
     
 class Chat:
     def __init__(self):

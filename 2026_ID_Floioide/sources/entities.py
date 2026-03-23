@@ -66,7 +66,9 @@ class Joueur(EntiteAnimee):
         
         
         # 2. variables de statistiques (noms corriges pour main.py)
-        self.vie = 20              # utilise "vie" au lieu de "pv"
+                    # utilise "vie" au lieu de "pv"
+        self.vie = 20  
+        self.vie_max = 20  
         self.eau = 100
         self.nrj_dash = 100
         self.monnaie = 0
@@ -76,13 +78,18 @@ class Joueur(EntiteAnimee):
         self.timer_attaque = 0
         self.timer_recup_eau = 0
         self.timer_energie = 0
-        
+        self.invul_timer = 0.0
         # etats pour l animation
         self.face_gauche = False
         self.en_dash = False
         self.en_escalade = False
         self.au_sol = False
         
+        self.timer_dash = 0.0  # Minuteur actuel (0 = prêt)
+        self.delai_dash = 5.0  # Le dash met 5 secondes à recharger
+        self.eau = 100.0       # Eau actuelle
+        self.eau_max = 100.0   # Eau maximum
+
         # 3. hitbox fixe obligatoire pour arcade 3.0
         self.hit_box_algorithm = "None"
         t = 45 
@@ -90,6 +97,17 @@ class Joueur(EntiteAnimee):
         self.hit_box = self.hit_box_perso
 
     def update_animation(self, delta_time=1/60):
+
+        if self.invul_timer > 0:
+            self.invul_timer -= delta_time
+        else:
+            self.invul_timer = 0
+
+        if hasattr(self, 'timer_dash') and self.timer_dash > 0:
+            self.timer_dash -= delta_time
+            if self.timer_dash < 0:
+                self.timer_dash = 0
+
         # calcul du temps pour changer d image
         self.temps_ecoule += delta_time
         
@@ -143,7 +161,10 @@ class Joueur(EntiteAnimee):
 
         # securite pour garder la meme hitbox
         self.hit_box = self.hit_box_perso
-
+        if hasattr(self, 'timer_dash') and self.timer_dash > 0:
+            self.timer_dash -= delta_time
+            if self.timer_dash < 0:
+                self.timer_dash = 0
 
 class Boss(EntiteAnimee):
     def __init__(self, x, y):
@@ -299,10 +320,10 @@ class MobVilleSol(Ennemi):
 
 
 class PNJ(arcade.Sprite):
-    def __init__(self, x, y):
+    def __init__(self, x, y, nom="pnj"):
         super().__init__(center_x=x, center_y=y, scale=0.5)
         chemin_pnj = os.path.join(DOSSIER_DATA, "mobs", "PNJ")
-        
+        self.est_marchand = True
         # Sécurité si les images n'existent pas encore
         try:
             self.tex1 = arcade.load_texture(os.path.join(chemin_pnj, "PNJ1.png"))
@@ -314,6 +335,9 @@ class PNJ(arcade.Sprite):
         self.texture = self.tex1
         self.timer_anim = 0
         self.est_survole = False
+        self.nom = nom
+        self.mouse_over = False  # Pour savoir si la souris est dessus
+        self.original_x = x
 
     def update_animation(self, delta_time=1/60):
         # 1. Animation (switch toutes les 0.5s)
@@ -327,6 +351,13 @@ class PNJ(arcade.Sprite):
             self.color = arcade.color.YELLOW
         else:
             self.color = arcade.color.WHITE
+
+        if self.mouse_over:
+            # Tremblement aléatoire
+            self.center_x = self.original_x + random.uniform(-2, 2)
+        else:
+            # Retour à la position normale
+            self.center_x = self.original_x
 
     def draw(self, **kwargs):
         # 1. Dessiner le sprite normalement
@@ -422,6 +453,7 @@ class EntiteBoss(arcade.Sprite):
         self.timer_action = 0
         self.timer_tremblement = 0
         self.pos_x_base = x
+        self.pv_max = 10
 
     def dessiner_barre_vie(self):
         """ Affiche la barre de vie au-dessus du boss (Version Arcade 3.0) """
@@ -430,7 +462,7 @@ class EntiteBoss(arcade.Sprite):
             hauteur = 8
             # Calcul du ratio de vie (évite la division par zéro si pv_max n'existe pas)
             max_pv = getattr(self, "pv_max", self.pv)
-            ratio = self.pv / max_pv
+            ratio = self.pv / self.pv_max
             
             # 1. Créer les objets rectangles (LBWH = Left, Bottom, Width, Height)
             # Fond rouge
@@ -457,7 +489,9 @@ class EntiteBoss(arcade.Sprite):
         # gere la gravite et les collisions basiques avec la hit box du decor
         self.change_y -= GRAVITE
         self.center_y += self.change_y
-        
+        self.timer_attaque = 0
+        self.invul_timer = 0
+
         collisions_y = arcade.check_for_collision_with_list(self, murs)
         for mur in collisions_y:
             if self.change_y > 0:
@@ -538,35 +572,67 @@ class EntiteBossTron(arcade.Sprite):
             self.invul_timer -= delta_time
 
 # --- PROJECTILE (LE BATON) ---
-class ProjectileArbre(arcade.Sprite):
-    def __init__(self, x, y, joueur):
-        super().__init__()
+class ProjectileBoss(arcade.Sprite):
+    def __init__(self, x, y, joueur): # On passe l'objet 'joueur' entier maintenant
+        super().__init__(scale=1.2)
+        
+        self.joueur = joueur
+        self.timer_vie = 0
+        self.degats = 4 # Combien de points de vie il enlève
+        
+        # --- Chargement de l'animation (1 à 5) ---
+        chemin = os.path.join(DOSSIER_DATA, "boss", "boss arbre")
+        self.textures_animation = []
+        for i in range(1, 6):
+            try:
+                tex = arcade.load_texture(os.path.join(chemin, f"Attaque.{i}.png"))
+                self.textures_animation.append(tex)
+            except Exception as e:
+                print(f"Erreur chargement image {i}: {e}")
+        
+        # On définit la texture de départ
+        if self.textures_animation:
+            self.texture = self.textures_animation[0]
+        self.cur_texture_index = 0
+        self.animation_speed = 0.1 # Vitesse de changement d'image
+
+        # --- Position et Direction ---
         self.center_x = x
         self.center_y = y
-        self.degats = 4  # CHANGEMENT : 4 points de dégâts
-        self.duree_vie = 5.0
-        self.temps_ecoule = 0.0
+
+        vitesse = 7
+        diff_x = joueur.center_x - x
+        diff_y = joueur.center_y - y
+        angle = math.atan2(diff_y, diff_x)
         
-        self.timer_attaque = 0
+        self.change_x = math.cos(angle) * vitesse
+        self.change_y = math.sin(angle) * vitesse
+        self.angle = math.degrees(angle)
 
-        chemin_base = os.path.join(DOSSIER_DATA, "boss", "boss arbre")
-        self.textures = [arcade.load_texture(os.path.join(chemin_base, f"Attaque.{i}.png")) for i in range(1, 6)]
-        self.texture = self.textures[0]
-        
-        angle = math.atan2(joueur.center_y - self.center_y, joueur.center_x - self.center_x)
-        self.change_x = math.cos(angle) * 8 # Rapide
-        self.change_y = math.sin(angle) * 8
+    def update(self, delta_time: float):
+        super().update()
+        self.timer_vie += delta_time
 
-    def update(self, delta_time: float = 1/60):
-        if self.timer_attaque >= 5.0:
-            self.timer_attaque = 0
+        # 1. Animation : on change d'image selon le temps
+        if self.textures_animation:
+            self.cur_texture_index += self.animation_speed
+            if self.cur_texture_index >= len(self.textures_animation):
+                self.cur_texture_index = 0
+            self.texture = self.textures_animation[int(self.cur_texture_index)]
 
-        self.center_x += self.change_x
-        self.center_y += self.change_y
-        self.temps_ecoule += delta_time
-        frame = int((self.temps_ecoule % 0.5) / 0.1)
-        if frame < 5: self.texture = self.textures[frame]
-        if self.temps_ecoule >= self.duree_vie: self.remove_from_sprite_lists()
+        # 2. Collision avec le joueur
+        if arcade.check_for_collision(self, self.joueur):
+            # On vérifie si le joueur n'est pas déjà en train de clignoter (invulnérable)
+            if self.joueur.invul_timer <= 0:
+                self.joueur.vie -= self.degats
+                self.joueur.invul_timer = 1.0 # 1 seconde d'invulnérabilité
+                print(f"Aïe ! PV restants : {self.joueur.vie}")
+            
+            self.remove_from_sprite_lists() # Le projectile disparaît après l'impact
+
+        # 3. Suppression si trop vieux (hors écran)
+        if self.timer_vie > 4.0:
+            self.remove_from_sprite_lists()
 
 # --- PHASES ---
 class BossArbreP1(EntiteBossTron):
@@ -576,25 +642,54 @@ class BossArbreP1(EntiteBossTron):
         self.center_x = x
         self.center_y = y
         self.joueur = joueur
-        self.pv = 100
-        self.pv_max = 100
+        self.pv = 10
+        self.pv_max = 10
         self.timer_tir = 0.0
         self.timer_attaque = 0
+    
+    def lancer_baton(self, liste_projectiles):
+        """ 
+        Cette méthode s'occupe uniquement de créer l'objet 
+        et de l'envoyer vers le joueur.
+        """
+        # On crée le projectile aux coordonnées actuelles du boss
+        baton = ProjectileBoss(
+            self.center_x, 
+            self.center_y, 
+            self.joueur
+        )
+        liste_projectiles.append(baton)
 
     def update_boss(self, delta_time, liste_projectiles, murs):
+        # 1. On appelle la logique de base (timer + invul)
         super().update_boss(delta_time, liste_projectiles, murs)
-        self.appliquer_physique(murs)
+        self.timer_attaque += delta_time
 
-        # Lancer le bâton toutes les 5 secondes
-        self.timer_tir += delta_time
-        if self.timer_tir >= 5.0:
-            self.timer_tir = 0
-            self.lancer_baton(liste_projectiles)
-
-        self.appliquer_physique(murs)
         if self.invul_timer > 0:
             self.invul_timer -= delta_time
 
+        self.appliquer_physique(murs)
+
+        # --- AJOUTE CE PRINT POUR TESTER ---
+        print(f"Chrono du boss : {self.timer_attaque}")
+
+        if self.timer_attaque >= 5.0:
+            print("LE BOSS ESSAIE DE TIRER !") # <--- CE PRINT AUSSI
+            self.timer_attaque = 0
+            self.lancer_baton(liste_projectiles)
+
+        # 2. Si le timer >= 5s, on tire
+        if self.timer_attaque >= 5.0:
+            self.timer_attaque = 0
+            # On crée le bâton aux coordonnées du boss, direction le joueur
+            nouveau_baton = ProjectileBoss(
+                self.center_x, 
+                self.center_y, 
+                self.joueur.center_x, 
+                self.joueur.center_y
+            )
+            liste_projectiles.append(nouveau_baton)
+            self.timer_attaque += delta_time
     def au_deces(self):
         # Libère deux P2
         return [BossArbreP2(self.center_x - 40, self.center_y, self.joueur),
@@ -609,8 +704,8 @@ class BossArbreP2(EntiteBossTron):
         self.texture = self.tex_sol
         self.center_x, self.center_y = x, y
         self.joueur = joueur
-        self.pv = 50
-        self.pv_max = 50
+        self.pv = 5
+        self.pv_max = 5
         self.degats = 3
         self.timer_saut = 0.0
 
@@ -628,6 +723,11 @@ class BossArbreP2(EntiteBossTron):
                 self.change_x = 5 if self.joueur.center_x > self.center_x else -5
         else:
             self.texture = self.tex_saut
+        if arcade.check_for_collision(self, self.joueur):
+            if self.joueur.invul_timer <= 0:
+                self.joueur.vie -= self.degats # Enlève 3 PV
+                self.joueur.invul_timer = 1.0
+                print(f"P2 vous a touché ! PV restants : {self.joueur.vie}")
 
     def au_deces(self):
         # Libère deux P3 (donc 4 au total si les deux P2 meurent)
@@ -640,8 +740,8 @@ class BossArbreP3(EntiteBossTron):
         self.texture = arcade.load_texture(os.path.join(DOSSIER_DATA, "boss", "boss arbre", "P3.png"))
         self.center_x, self.center_y = x, y
         self.joueur = joueur
-        self.pv = 25
-        self.pv_max = 25
+        self.pv = 2
+        self.pv_max = 2
         self.degats = 1
         self.timer_saut = 0.0
 
@@ -656,3 +756,8 @@ class BossArbreP3(EntiteBossTron):
                 self.timer_saut = 0.0
                 self.change_y = 8
                 self.change_x = 4 if self.joueur.center_x > self.center_x else -4
+        if arcade.check_for_collision(self, self.joueur):
+            if self.joueur.invul_timer <= 0:
+                self.joueur.vie -= self.degats # Enlève 1 PV
+                self.joueur.invul_timer = 1.0
+                print(f"P3 vous a touché ! PV restants : {self.joueur.vie}")
