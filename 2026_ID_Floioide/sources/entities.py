@@ -576,8 +576,8 @@ class BossArbreP1(EntiteBossTron):
         self.center_x = x
         self.center_y = y
         self.joueur = joueur
-        self.pv = 5
-        self.pv_max = 5
+        self.pv = 100
+        self.pv_max = 100
         self.timer_tir = 0.0
         self.timer_attaque = 0
 
@@ -609,8 +609,8 @@ class BossArbreP2(EntiteBossTron):
         self.texture = self.tex_sol
         self.center_x, self.center_y = x, y
         self.joueur = joueur
-        self.pv = 3
-        self.pv_max = 3
+        self.pv = 50a
+        self.pv_max = 50
         self.degats = 3
         self.timer_saut = 0.0
 
@@ -640,8 +640,8 @@ class BossArbreP3(EntiteBossTron):
         self.texture = arcade.load_texture(os.path.join(DOSSIER_DATA, "boss", "boss arbre", "P3.png"))
         self.center_x, self.center_y = x, y
         self.joueur = joueur
-        self.pv = 1
-        self.pv_max = 1
+        self.pv = 25
+        self.pv_max = 25
         self.degats = 1
         self.timer_saut = 0.0
 
