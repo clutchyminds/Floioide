@@ -735,7 +735,7 @@ class BossArbreP2(EntiteBossTron):
         return [BossArbreP3(self.center_x - 20, self.center_y, self.joueur),
                 BossArbreP3(self.center_x + 20, self.center_y, self.joueur)]
         self.joueur.monnaie += 5
-        
+
 class BossArbreP3(EntiteBossTron):
     def __init__(self, x, y, joueur):
         super().__init__(scale=0.6)

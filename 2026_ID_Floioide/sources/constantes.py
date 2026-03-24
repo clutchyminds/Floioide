@@ -14,7 +14,7 @@ dossier_attaques = os.path.join(DOSSIER_DATA, "player", "attaque")
 
 # --- RÉGLAGES DU JOUEUR ---
 VITESSE_MARCHE = 5
-VITESSE_DASH = 20
+VITESSE_DASH = 60
 VITESSE_SAUT = 12
 VITESSE_TIR = 10
 DISTANCE_MAX_TIR = 256

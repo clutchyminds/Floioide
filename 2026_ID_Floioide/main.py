@@ -553,21 +553,22 @@ class MonJeu(arcade.View):
             self.fleur.timer_dash -= delta_time
 
         # --- RÉGÉNÉRATION FONTAINE ---
-        # On vérifie que le calque fontaine existe dans la carte
-        if "fontaine" in self.scene:
-            # On vérifie si la hitbox du joueur touche un bloc d'eau de la fontaine
-            if arcade.check_for_collision_with_list(self.fleur, self.scene["fontaine"]):
-                # Régénération de l'eau (Mana) : +25 par seconde
-                if self.fleur.eau < self.fleur.eau_max:
-                    self.fleur.eau += 25 * delta_time
-                    if self.fleur.eau > self.fleur.eau_max:
-                        self.fleur.eau = self.fleur.eau_max
-                
-                # Régénération de la vie : +1 par seconde
-                if self.fleur.vie < self.fleur.vie_max:
-                    self.fleur.vie += 1 * delta_time
-                    if self.fleur.vie > self.fleur.vie_max:
-                        self.fleur.vie = self.fleur.vie_max
+        # --- LOGIQUE DES FONTAINES (À mettre dans on_update) ---
+        # On vérifie la collision à chaque frame, même si le joueur est immobile
+        fontaines_touchees = arcade.check_for_collision_with_list(self.fleur, self.tiroirs["fontaines"])
+
+        if fontaines_touchees:
+            # Régénération de l'EAU
+            if self.fleur.eau < self.fleur.eau_max:
+                self.fleur.eau += 20 * delta_time  # Ajustez la vitesse (ici +20 par seconde)
+                if self.fleur.eau > self.fleur.eau_max:
+                    self.fleur.eau = self.fleur.eau_max
+
+            # Régénération de la VIE
+            if self.fleur.vie < self.fleur.vie_max:
+                self.fleur.vie += 5 * delta_time   # Ajustez la vitesse (ici +5 par seconde)
+                if self.fleur.vie > self.fleur.vie_max:
+                    self.fleur.vie = self.fleur.vie_max
 
 
         est_en_train_de_dasher = self.fleur.timer_dash > 6.8 
@@ -620,6 +621,9 @@ class MonJeu(arcade.View):
                 self.fleur.change_x = 0
                 self.fleur.change_y = VITESSE_MARCHE
                 self.fleur.center_y += self.fleur.change_y
+                if arcade.check_for_collision_with_list(self.fleur, self.tiroirs["murs"]):
+                    self.fleur.center_y -= self.fleur.change_y # Annule le mouvement
+                    self.fleur.en_escalade = False
             else:
                 # Gravité et sauts normaux (seulement si on n'escalade pas)
                 self.physique.update()
