@@ -22,51 +22,51 @@ class HUD:
         self.tex_monnaie = arcade.load_texture(os.path.join(DOSSIER_DATA, "mobs", "PNJ", "monnaie.png"))
 
     def dessiner(self, joueur):
-        """Dessine les coeurs et les barres (Eau/Énergie)"""
-        # Coeurs (Vies)
+        # On commence à 300 pour avoir la place pour 10 cœurs
         for i in range(10):
-            x = 40 + (i * 35)
-            y = HAUTEUR - 40
-            if joueur.vie >= (i + 1) * 2:
+            x_coeur = 50 + i * 35  # Espacement de 35 pixels entre chaque cœur
+            y_coeur = 130          # Juste au-dessus de l'inventaire
+            
+            # Détermination de la texture (1 cœur = 10 PV)
+            seuil_plein = (i + 1) * 10
+            seuil_demi = seuil_plein - 5
+            
+            if joueur.vie >= seuil_plein:
                 tex = self.tex_vie_1
-            elif joueur.vie == (i * 2) + 1:
+            elif joueur.vie > seuil_demi:
                 tex = self.tex_vie_05
             else:
                 tex = self.tex_vie_0
-            arcade.draw_texture_rect(tex, arcade.rect.XYWH(x, y, 30, 30))
-
+                
+            arcade.draw_texture_rect(tex, arcade.rect.XYWH(x_coeur, y_coeur, 32, 32))
         
 
     def dessiner_inventaire_et_monnaie(self, joueur):
-        # 1. Monnaie
-        # On utilise l'ancienne méthode de dessin qui est 100% stable sur ta version
+        # --- 1. MONNAIE ---
+        # CORRECTION ICI : Remplacement de arcade.Rect par arcade.rect.XYWH
         arcade.draw_texture_rect(self.tex_monnaie, arcade.rect.XYWH(LARGEUR - 150, 50, 40, 40))
         arcade.draw_text(f"{joueur.monnaie} $", LARGEUR - 100, 40, arcade.color.YELLOW, 18, bold=True)
 
-        # 2. Les 4 cases d'inventaire
-        # C'est cette boucle 'for' qui manquait et qui causait le crash "UnboundLocalError" !
+        # --- 2. INVENTAIRE (Au centre en bas) ---
         for i in range(4):
             x_slot = 400 + i * 100
             y_slot = 50
-            
-            # On dessine le rectangle directement avec draw_rectangle_outline
-            # Cela évite le bug de la classe Rect.__new__ missing arguments
-            arcade.draw_rect_outline(arcade.rect.XYWH(x_slot, y_slot, 80, 80), arcade.color.WHITE, 3)
+            rect = arcade.rect.XYWH(x_slot, y_slot, 80, 80)
+            arcade.draw_rect_outline(rect, arcade.color.WHITE, 3)
 
-            # Si un objet est présent dans ce slot, on le dessine
             if joueur.inventaire[i] is not None:
-                # Exemple de code si ton objet a une texture :
-                # arcade.draw_texture_rect(joueur.inventaire[i].texture, arcade.Rect(x_slot, y_slot, 64, 64))
+                # Code pour dessiner l'item ici plus tard
                 pass
 
-        # 3. Barre d'Eau (Mana)
-        # On affiche le texte pour l'eau
-        arcade.draw_text(f"{int(joueur.eau)}", LARGEUR - 320, HAUTEUR - 70, arcade.color.CYAN, 24, bold=True)
-        # On choisit la bonne texture
+        # --- 3. GOUTTE D'EAU / MANA (En haut à droite de l'inventaire) ---
         val_eau = max(0, min(100, int(joueur.eau // 25) * 25))
-        arcade.draw_texture_rect(self.textures_eau[val_eau], arcade.rect.XYWH(LARGEUR - 180, HAUTEUR - 60, 200, 60))
+        # TAILLE CORRIGÉE : 64x64 pour que la goutte soit parfaitement proportionnée
+        # CORRECTION ICI : Remplacement de arcade.Rect par arcade.rect.XYWH
+        arcade.draw_texture_rect(self.textures_eau[val_eau], arcade.rect.XYWH(650, 140, 64, 64))
+        # Le texte s'affiche juste à côté de l'icône
+        arcade.draw_text(f"{int(joueur.eau)}", 670, 130, arcade.color.CYAN, 18, bold=True)
 
-        # 4. Barre de Dash (Fleur / NRJ)
+        # --- 4. FLEUR / DASH (À côté de la goutte d'eau) ---
         temps_restant = math.ceil(getattr(joueur, 'timer_dash', 0))
         
         if temps_restant >= 5: val_nrj = 0
@@ -75,20 +75,15 @@ class HUD:
         elif temps_restant == 2: val_nrj = 75
         else: val_nrj = 100
         
-        # On affiche le temps restant
+        # TAILLE CORRIGÉE : 64x64 pour que la fleur soit parfaite
+        # CORRECTION ICI : Remplacement de arcade.Rect par arcade.rect.XYWH
+        arcade.draw_texture_rect(self.textures_nrj[val_nrj], arcade.rect.XYWH(740, 140, 64, 64))
+        
+        # Texte du minuteur de dash
         if temps_restant > 0:
-            arcade.draw_text(f"{temps_restant}s", LARGEUR - 320, HAUTEUR - 150, arcade.color.ORANGE, 24, bold=True)
+            arcade.draw_text(f"{temps_restant}s", 765, 130, arcade.color.ORANGE, 18, bold=True)
         else:
-            arcade.draw_text("Prêt", LARGEUR - 320, HAUTEUR - 150, arcade.color.GREEN, 20, bold=True)
-            
-        arcade.draw_texture_rect(self.textures_nrj[val_nrj], arcade.rect.XYWH(LARGEUR - 180, HAUTEUR - 140, 200, 60))
-
-    def dessiner_vie_boss(self, boss):
-        ratio = max(0, boss.vie / boss.vie_max)
-        # CORRECTION : draw_rect_filled
-        arcade.draw_rect_filled(arcade.rect.XYWH(LARGEUR//2, 120, 400, 20), arcade.color.BLACK)
-        arcade.draw_rect_filled(arcade.rect.XYWH(LARGEUR//2 - (400*(1-ratio)/2), 120, 400 * ratio, 15), arcade.color.RED)
-        arcade.draw_text(boss.nom, LARGEUR//2, 145, arcade.color.WHITE, 12, bold=True, anchor_x="center")
+            arcade.draw_text("Prêt", 765, 130, arcade.color.GREEN, 14, bold=True)
 
 class InterfaceShop:
     def __init__(self):
@@ -117,7 +112,7 @@ class InterfaceShop:
         self.charger_item("Grand Soin", 80, "Heal.2.png")
 
         # Dimensions
-        self.btn_largeur = 180
+        self.btn_largeur = 130
         self.btn_hauteur = 50
         self.espacement_x = 195
         self.espacement_y = 70

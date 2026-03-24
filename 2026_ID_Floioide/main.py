@@ -10,6 +10,159 @@ from sources.interface import HUD, Chat, InterfaceShop
 import math
 from arcade.hitbox import HitBox
 
+class EcranChargementView(arcade.View):
+    def __init__(self, vue_suivante_class):
+        super().__init__()
+        self.vue_suivante_class = vue_suivante_class
+        self.timer = 0
+        self.indice_chargement = 1
+        self.temp_anim = 0
+        
+        # Correction du nom de la variable pour éviter le TypeError
+        self.frames_chargement = [] 
+        
+        # Logo réduit d'office
+        self.logo = arcade.load_texture(os.path.join(DOSSIER_DATA, "Logo_.png"))
+
+        # On charge les 6 images dans la BONNE variable
+        for i in range(1, 7):
+            chemin = os.path.join(DOSSIER_DATA, "chargement", f"{i}.png")
+            if os.path.exists(chemin):
+                self.frames_chargement.append(arcade.load_texture(chemin))
+            else:
+                # Texture de secours si fichier manquant
+                self.frames_chargement.append(arcade.make_soft_square_texture(50, arcade.color.WHITE))
+
+    def on_update(self, delta_time):
+        self.timer += delta_time
+        self.temp_anim += delta_time
+        if self.temp_anim > 0.1:
+            self.indice_chargement += 1
+            if self.indice_chargement > 6: self.indice_chargement = 1
+            self.temp_anim = 0
+
+        if self.timer > 2.5: # Temps de chargement
+            vue = self.vue_suivante_class()
+            if hasattr(vue, "setup"): vue.setup()
+            self.window.show_view(vue)
+
+    def on_draw(self):
+        self.clear()
+        arcade.draw_rect_filled(arcade.rect.XYWH(LARGEUR//2, HAUTEUR//2, LARGEUR, HAUTEUR), arcade.color.BLACK)
+        
+        # LOGO : échelle 0.5 (plus petit) avec pulsation
+        echelle = 0.5 + math.sin(self.timer * 3) * 0.05
+        arcade.draw_texture_rect(self.logo, arcade.rect.XYWH(LARGEUR//2, HAUTEUR//2 + 80, 
+                                 self.logo.width * echelle, self.logo.height * echelle))
+        
+        # Animation du petit chargement
+        tex = self.frames_chargement[self.indice_chargement - 1]
+        arcade.draw_texture_rect(tex, arcade.rect.XYWH(LARGEUR//2, HAUTEUR//2 - 120, 64, 64))
+
+
+class MenuAideView(arcade.View):
+    def __init__(self):
+        super().__init__()
+        # TEXTE À MODIFIER COMME TU VEUX
+        self.texte_aide = (
+            "--- COMMANDES DU JEU ---\n\n"
+            "Mouvement : Flèches directionnelles ou ZQSD\n"
+            "Sauter : Espace\n"
+            "Attaquer : Clic Gauche\n"
+            "Dash : Touche Majuscule (Shift)\n"
+            "Boutique : Clic Droit sur un PNJ\n"
+            "Chat : Touche T\n\n"
+            "Cliquez n'importe où pour retourner au menu principal."
+        )
+
+    def on_draw(self):
+        self.clear()
+        arcade.draw_rect_filled(arcade.LBWH(0, 0, LARGEUR, HAUTEUR), arcade.color.DARK_SLATE_GRAY)
+        
+        arcade.draw_text("AIDE", LARGEUR//2, HAUTEUR - 100, arcade.color.WHITE, 40, bold=True, anchor_x="center", anchor_y="center")
+        arcade.draw_text(self.texte_aide, LARGEUR//2, HAUTEUR//2, arcade.color.WHITE, 16, anchor_x="center", anchor_y="center", align="center", multiline=True, width=600)
+
+    def on_mouse_press(self, x, y, button, modifiers):
+        self.window.show_view(MenuPrincipalView())
+
+
+class MenuPrincipalView(arcade.View):
+    def __init__(self):
+        super().__init__()
+        
+        self.w_btn_base, self.h_btn_base = 320, 110
+        self.x_btn = LARGEUR // 2
+        self.y_jouer = HAUTEUR // 2 - 20
+        self.y_aide = HAUTEUR // 2 - 150
+        
+        # Variables pour l'animation
+        self.timer = 0
+        self.mouse_x = 0
+        self.mouse_y = 0
+
+        # Chemins des images
+        try:
+            self.fond = arcade.load_texture(os.path.join(DOSSIER_DATA, "intro", "image 1.1.png"))
+            self.logo = arcade.load_texture(os.path.join(DOSSIER_DATA, "Logo_.png"))
+            self.btn_jouer = arcade.load_texture(os.path.join(DOSSIER_DATA, "jouer.png"))
+            self.btn_aide = arcade.load_texture(os.path.join(DOSSIER_DATA, "aide.png"))
+        except:
+            # Sécurité si les images ne sont pas encore créées
+            self.fond = arcade.make_soft_square_texture(LARGEUR, arcade.color.BLACK)
+            self.logo = arcade.make_soft_square_texture(200, arcade.color.GOLD)
+            self.btn_jouer = arcade.make_soft_square_texture(200, arcade.color.DARK_GREEN)
+            self.btn_aide = arcade.make_soft_square_texture(200, arcade.color.DARK_BLUE)
+            
+        # Tailles des boutons
+        
+        
+
+    def on_update(self, delta_time):
+        self.timer += delta_time
+
+    def on_mouse_motion(self, x, y, dx, dy):
+        # On garde en mémoire la position de la souris
+        self.mouse_x = x
+        self.mouse_y = y
+
+    def on_draw(self):
+        self.clear()
+        # Fond
+        arcade.draw_texture_rect(self.fond, arcade.LBWH(0, 0, LARGEUR, HAUTEUR))
+        
+        # Calcul de la pulsation de base (grossit/rétrécit)
+        pulsation = math.sin(self.timer * 4) * 0.05
+        
+        # --- LOGO : Plus petit avec pulsation ---
+        scale_logo = 0.5 + pulsation # Base 0.5 au lieu de 1.0
+        arcade.draw_texture_rect(self.logo, arcade.rect.XYWH(LARGEUR//2, HAUTEUR - 150, self.logo.width * scale_logo, self.logo.height * scale_logo))
+        
+        # --- BOUTON JOUER : Détection du survol ---
+        survol_jouer = abs(self.mouse_x - self.x_btn) < self.w_btn_base/2 and abs(self.mouse_y - self.y_jouer) < self.h_btn_base/2
+        scale_jouer = 1.15 if survol_jouer else 1.0 + pulsation # Gros et fixe si survolé, sinon pulse
+        
+        w_jouer = self.w_btn_base * scale_jouer
+        h_jouer = self.h_btn_base * scale_jouer
+        arcade.draw_texture_rect(self.btn_jouer, arcade.rect.XYWH(self.x_btn, self.y_jouer, w_jouer, h_jouer))
+        arcade.draw_text("Jouer", self.x_btn, self.y_jouer, arcade.color.WHITE, int(20 * scale_jouer), bold=True, anchor_x="center", anchor_y="center")
+        
+        # --- BOUTON AIDE : Détection du survol ---
+        survol_aide = abs(self.mouse_x - self.x_btn) < self.w_btn_base/2 and abs(self.mouse_y - self.y_aide) < self.h_btn_base/2
+        scale_aide = 1.15 if survol_aide else 1.0 + pulsation
+        
+        w_aide = self.w_btn_base * scale_aide
+        h_aide = self.h_btn_base * scale_aide
+        arcade.draw_texture_rect(self.btn_aide, arcade.rect.XYWH(self.x_btn, self.y_aide, w_aide, h_aide))
+        arcade.draw_text("Aide", self.x_btn, self.y_aide, arcade.color.WHITE, int(20 * scale_aide), bold=True, anchor_x="center", anchor_y="center")
+
+    def on_mouse_press(self, x, y, button, modifiers):
+        if button == arcade.MOUSE_BUTTON_LEFT:
+            # On utilise les dimensions de base pour la zone de clic
+            if abs(x - self.x_btn) < self.w_btn_base/2 and abs(y - self.y_jouer) < self.h_btn_base/2:
+                self.window.show_view(EcranChargementView(CinematiqueView))
+            elif abs(x - self.x_btn) < self.w_btn_base/2 and abs(y - self.y_aide) < self.h_btn_base/2:
+                self.window.show_view(MenuAideView())
+
 class CinematiqueView(arcade.View):
     def __init__(self):
         super().__init__()
@@ -105,13 +258,13 @@ class CinematiqueView(arcade.View):
                 self.scene_actuelle += 1
                 self.charger_scene()
             else:
-                # Arrêter la musique de l'intro
+                # 1. Arrêter la musique de l'intro
                 arcade.stop_sound(self.lecteur_musique)
                 
-                # Lancer le jeu
-                game_view = MonJeu()
-                game_view.setup()
-                self.window.show_view(game_view)
+                # 2. On lance l'écran de chargement en lui disant qu'après, c'est MonJeu
+                # On ne fait SURTOUT PAS game_view.setup() ici
+                chargement = EcranChargementView(MonJeu) 
+                self.window.show_view(chargement)
 
 
 
@@ -651,24 +804,6 @@ class MonJeu(arcade.View):
                 self.etat_boss_tron = 2
                 self.tiroirs["projectiles_ennemis"].clear()
 
-        # --- Le Joueur attaque le Boss ---
-            if "attaques" in self.tiroirs:
-                for attaque in self.tiroirs["attaques"]:
-                    boss_touches = arcade.check_for_collision_with_list(attaque, self.tiroirs["boss"])
-                    for boss in boss_touches:
-                        # On vérifie si l'attaque n'a pas déjà touché ce boss pour cette frame
-                        if not hasattr(attaque, "deja_touche_boss"): attaque.deja_touche_boss = set()
-                        
-                        if boss not in attaque.deja_touche_boss:
-                            boss.vie -= 1 # 1 point de dégât
-                            attaque.deja_touche_boss.add(boss)
-                            
-                            if boss.vie <= 0:
-                                if hasattr(boss, "au_deces"):
-                                    for nouveau in boss.au_deces():
-                                        self.tiroirs["boss"].append(nouveau)
-                                boss.remove_from_sprite_lists()
-
         if "projectiles_ennemis" in self.tiroirs:
             self.tiroirs["projectiles_ennemis"].update()
         
@@ -688,48 +823,58 @@ class MonJeu(arcade.View):
         self.camera_sprites.position = (self.fleur.center_x, self.fleur.center_y)
 
     def on_draw(self):
-        # 1. On nettoie l'écran (très important pour ne pas avoir d'images fantômes)
+        # 1. On nettoie l'écran
         self.clear()
         
-        # --- A. COUCHE "MONDE" (Tout ce qui bouge avec le joueur) ---
-        self.camera_sprites.use() 
+        # --- A. COUCHE "MONDE" (Tout ce qui bouge quand le joueur marche) ---
+        # On utilise la caméra du jeu (qui suit le joueur)
         self.camera_jeu.use()
         
+        # On dessine la map
         if self.scene:
             self.scene.draw()
 
-        # On dessine les entités par-dessus
+        # On dessine les entités (PNJ, Ennemis, Boss)
         if "pnjs" in self.tiroirs: self.tiroirs["pnjs"].draw()
         if "ennemis" in self.tiroirs: self.tiroirs["ennemis"].draw()
+        
         if "boss" in self.tiroirs:
             self.tiroirs["boss"].draw()
             for b in self.tiroirs["boss"]:
-                b.dessiner_barre_vie() # Appelle la fonction qu'on a créée dans EntiteBossTron
+                b.dessiner_barre_vie()
         
         if "projectiles_ennemis" in self.tiroirs: self.tiroirs["projectiles_ennemis"].draw()
         if "attaques" in self.tiroirs: self.tiroirs["attaques"].draw()
 
+        # --- IMPORTANT : LE JOUEUR DOIT ÊTRE ICI ---
+        # Pour qu'il se déplace sur la carte et pas qu'il soit collé à l'écran
+        if "joueur" in self.tiroirs:
+            self.tiroirs["joueur"].draw()
+
+
         # --- B. COUCHE "INTERFACE" (Tout ce qui reste fixe sur l'écran) ---
+        # On switch sur la caméra GUI (Coordonnées 0,0 en bas à gauche de l'écran)
         self.camera_gui.use()
         
-        # ON NE DESSINE JAMAIS LA SCENE ICI !
+        # On dessine les éléments de l'UI
         self.hud.dessiner(self.fleur)
         self.hud.dessiner_inventaire_et_monnaie(self.fleur)
         self.chat.dessiner()
         
-        # 3. ON DESSINE LE JOUEUR EN DERNIER (pour qu'il soit devant tout le monde)
-        if "joueur" in self.tiroirs:
-            self.tiroirs["joueur"].draw()
-        # --- C. DEBUG ---
+        # Le shop doit être dans la GUI pour rester au centre de l'écran
+        if self.shop.ouvert:
+            self.shop.dessiner()
+
+        # --- C. DEBUG (Aussi dans la GUI pour être lisible) ---
         if self.show_debug:
             debug_txt = f"X: {int(self.fleur.center_x)} Y: {int(self.fleur.center_y)}\nFPS: {int(arcade.get_fps())}"
             arcade.draw_text(debug_txt, 20, HAUTEUR - 60, arcade.color.GREEN, 12, multiline=True, width=400)
-        if self.shop.ouvert:
-            self.shop.dessiner()
+            
 def main():
     window = arcade.Window(LARGEUR, HAUTEUR, TITRE)
-    intro = CinematiqueView()
-    window.show_view(intro)
+    # --- MODIFICATION ICI : On lance le menu principal au lieu de la cinématique ---
+    menu_principal = MenuPrincipalView()
+    window.show_view(menu_principal)
     arcade.run()
 
 if __name__ == "__main__":

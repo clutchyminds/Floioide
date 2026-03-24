@@ -5,6 +5,9 @@ def gerer_collisions(tiroirs):
     if "attaques" not in tiroirs or not tiroirs["attaques"]:
         return
     
+    if "joueur" in tiroirs:
+        joueur = tiroirs["joueur"][0]
+
     for attaque in tiroirs["attaques"]:
         # 2. On prépare la liste des cibles (mobs + boss)
         # Au lieu de créer une SpriteList compliquée, on utilise check_for_collision_with_lists
@@ -29,6 +32,7 @@ def gerer_collisions(tiroirs):
                 # --- CAS A : BOSS (avec sécurité timer) ---
                 if hasattr(ennemi, "invul_timer"):
                     if ennemi.invul_timer <= 0:
+                        joueur.monnaie += 2
                         ennemi.pv -= 1
                         ennemi.invul_timer = 0.75
                         # On ne l'ajoute pas à deja_touche pour permettre 
@@ -38,8 +42,10 @@ def gerer_collisions(tiroirs):
                 else:
                     if hasattr(ennemi, "pv"):
                         ennemi.pv -= 1
+                        joueur.monnaie += 1
                     elif hasattr(ennemi, "points_de_vie"):
                         ennemi.points_de_vie -= 1
+                        joueur.monnaie += 2
                     
                     # On marque comme touché par cette instance d'attaque
                     attaque.deja_touche.add(ennemi)

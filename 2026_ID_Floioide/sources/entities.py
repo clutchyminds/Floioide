@@ -67,8 +67,8 @@ class Joueur(EntiteAnimee):
         
         # 2. variables de statistiques (noms corriges pour main.py)
                     # utilise "vie" au lieu de "pv"
-        self.vie = 20  
-        self.vie_max = 20  
+        self.vie = 100
+        self.vie_max = 100  
         self.eau = 100
         self.nrj_dash = 100
         self.monnaie = 0
@@ -694,7 +694,8 @@ class BossArbreP1(EntiteBossTron):
         # Libère deux P2
         return [BossArbreP2(self.center_x - 40, self.center_y, self.joueur),
                 BossArbreP2(self.center_x + 40, self.center_y, self.joueur)]
-
+        self.joueur.monnaie += 5
+    
 class BossArbreP2(EntiteBossTron):
     def __init__(self, x, y, joueur):
         super().__init__(scale=1.0)
@@ -733,7 +734,8 @@ class BossArbreP2(EntiteBossTron):
         # Libère deux P3 (donc 4 au total si les deux P2 meurent)
         return [BossArbreP3(self.center_x - 20, self.center_y, self.joueur),
                 BossArbreP3(self.center_x + 20, self.center_y, self.joueur)]
-
+        self.joueur.monnaie += 5
+        
 class BossArbreP3(EntiteBossTron):
     def __init__(self, x, y, joueur):
         super().__init__(scale=0.6)
