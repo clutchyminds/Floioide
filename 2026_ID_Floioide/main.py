@@ -14,24 +14,35 @@ from arcade.hitbox import HitBox
 class ProjectileJoueur(arcade.Sprite):
     def __init__(self, x, y, dest_x, dest_y):
         chemin = os.path.join(DOSSIER_DATA, "mobs", "PNJ", "items", "balle.png")
-        try: tex = arcade.load_texture(chemin)
-        except: tex = arcade.make_soft_square_texture(10, arcade.color.YELLOW)
+        try: 
+            tex = arcade.load_texture(chemin)
+        except: 
+            tex = arcade.make_soft_square_texture(10, arcade.color.YELLOW)
+        
         super().__init__(tex, scale=0.8)
         self.center_x, self.center_y = x, y
         self.degats = 2
-        self.timer_vie = 0
+        self.timer_vie = 0  # Chronomètre de vie
         
-        angle = math.atan2(dest_y - y, dest_x - x)
-        # 128px par seconde
-        self.vitesse_x = math.cos(angle) * 128
-        self.vitesse_y = math.sin(angle) * 128
-        self.angle = math.degrees(angle)
+        # Calcul de l'angle vers le curseur
+        angle_rad = math.atan2(dest_y - y, dest_x - x)
+        
+        # Vitesse basée sur la constante (448 px/s)
+        self.change_x = math.cos(angle_rad) * VITESSE_TIR
+        self.change_y = math.sin(angle_rad) * VITESSE_TIR
+        
+        # Orientation de la texture (Arcade utilise les degrés)
+        # Comme ta balle pointe vers la droite par défaut, l'angle 0 est parfait
+        self.angle = math.degrees(angle_rad)
 
     def update_proj(self, delta_time):
-        self.center_x += self.vitesse_x * delta_time
-        self.center_y += self.vitesse_y * delta_time
+        # Déplacement simple
+        self.center_x += self.change_x * delta_time
+        self.center_y += self.change_y * delta_time
+        
+        # Gestion de la durée de vie (5 secondes)
         self.timer_vie += delta_time
-        if self.timer_vie > 5.0:
+        if self.timer_vie >= 5.0:
             self.remove_from_sprite_lists()
 
 class EcranChargementView(arcade.View):
@@ -83,7 +94,6 @@ class EcranChargementView(arcade.View):
         tex = self.frames_chargement[self.indice_chargement - 1]
         arcade.draw_texture_rect(tex, arcade.rect.XYWH(LARGEUR//2, HAUTEUR//2 - 120, 64, 64))
 
-
 class MenuAideView(arcade.View):
     def __init__(self):
         super().__init__()
@@ -108,7 +118,6 @@ class MenuAideView(arcade.View):
 
     def on_mouse_press(self, x, y, button, modifiers):
         self.window.show_view(MenuPrincipalView())
-
 
 class MenuPrincipalView(arcade.View):
     def __init__(self):
@@ -308,8 +317,6 @@ class CinematiqueView(arcade.View):
                 chargement = EcranChargementView(MonJeu) 
                 self.window.show_view(chargement)
 
-
-
 class MonJeu(arcade.View):
     def __init__(self, mode_dev=False):
         super().__init__()
@@ -436,8 +443,17 @@ class MonJeu(arcade.View):
         self.tiroirs["joueur"] = arcade.SpriteList()
         self.tiroirs["joueur"].append(self.fleur)
         
-        self.tiroirs["pnjs"] = arcade.SpriteList()
-        self.tiroirs["pnjs"].append(PNJ(790, 2550))
+        self.tiroirs["pnj"] = arcade.SpriteList()
+
+        coords_pnj = [
+            (2765, 2797), (5893, 877), (12373, 2989), 
+            (15154, 3949), (18868, 2989), (29084, 2733)
+        ]
+
+        for x, y in coords_pnj:
+            # On passe x, y et le joueur (fleur) car la classe PNJ en a besoin pour te regarder
+            un_pnj = PNJ(x, y, self.fleur) 
+            self.tiroirs["pnj"].append(un_pnj)
         
         self.tiroirs["ennemis"] = arcade.SpriteList()
         self.tiroirs["attaques"] = arcade.SpriteList()
@@ -577,11 +593,6 @@ class MonJeu(arcade.View):
                 elif fichier == "eau.3.png" and self.fleur.eau < 100:
                     self.fleur.eau = min(100, self.fleur.eau + 60)
                     utilise = True
-                elif fichier == "piou.png":
-                    # Tirer la balle
-                    balle = ProjectileJoueur(self.fleur.center_x, self.fleur.center_y + 20, self.mouse_world_x, self.mouse_world_y)
-                    self.tiroirs["projectiles_joueur"].append(balle)
-                    # "Piou" n'est pas consommé
                 
                 # Réduction du stack si consommé
                 if utilise:
@@ -644,20 +655,24 @@ class MonJeu(arcade.View):
             self.interface_dev.on_mouse_press(x, y, self.fleur)
             return # On bloque l'attaque si on clique dans le menu
         
-        
+        # On vérifie si c'est le clic droit
         if button == arcade.MOUSE_BUTTON_RIGHT:
-            # On vérifie si le joueur a le fusil (à adapter selon ta logique d'inventaire)
-            if self.fleur.item_tenu == "fusil": 
-                # On calcule la position réelle dans le monde (avec la caméra)
-                bx = x + self.camera_jeu.position.x
-                by = y + self.camera_jeu.position.y
+            # Vérifie que le joueur tient bien le fusil
+            # Note : "piou.png" doit être le nom EXACT dans ton inventaire
+            if self.fleur.item_tenu == "piou.png":
                 
-                # Création du projectile
-                balle = ProjectileJoueur(self.fleur.center_x, self.fleur.center_y, bx, by)
+                # IMPORTANT : On transforme les coordonnées de la souris 
+                # en coordonnées "monde" pour tirer au bon endroit sur la map
+                vx = x + self.camera_jeu.position.x
+                vy = y + self.camera_jeu.position.y
                 
-                # --- LA CORRECTION EST ICI ---
+                # Création de la balle
+                balle = ProjectileJoueur(self.fleur.center_x, self.fleur.center_y, vx, vy)
+                
+                # On l'ajoute au tiroir pour qu'elle s'affiche
                 if "projectiles_joueur" in self.tiroirs:
                     self.tiroirs["projectiles_joueur"].append(balle)
+                        
 
         # --- A. SI LE SHOP EST DÉJÀ OUVERT ---
         if self.shop.ouvert:
@@ -891,9 +906,21 @@ class MonJeu(arcade.View):
         if self.fleur.vie <= 0:
             print("Game Over")
             self.setup() # Pour recommencer le niveau
-        # Anime les PNJ
-        for pnj in self.tiroirs["pnjs"]:
-            pnj.update_animation(delta_time)
+        
+        if "pnj" in self.tiroirs:
+            # --- LES ANIMATIONS ---
+            # Cette ligne appelle update_animation() sur chaque PNJ de la liste
+            self.tiroirs["pnj"].update_animation(delta_time)
+
+            # --- L'OUVERTURE DU SHOP ---
+            # On vérifie si le joueur (self.fleur) touche un PNJ
+            pnj_touches = arcade.check_for_collision_with_list(self.fleur, self.tiroirs["pnj"])
+            
+            if pnj_touches:
+                # Si on en touche un, on ouvre le shop
+                self.shop.ouvert = True
+                # Optionnel : On peut aussi figer le joueur pour qu'il ne s'enfuie pas direct
+                # self.fleur.change_x = 0
 
         # --- LOGIQUE DES MOBS ---
         mobs_sol = sum(1 for e in self.tiroirs["ennemis"] if hasattr(e, "volant") and not e.volant)
@@ -1054,8 +1081,7 @@ class MonJeu(arcade.View):
                         pour_supprimer = True
                 if pour_supprimer:
                     proj.remove_from_sprite_lists()
-
-                        
+                     
     def on_draw(self):
         # 1. On nettoie l'écran
         self.clear()
@@ -1069,7 +1095,10 @@ class MonJeu(arcade.View):
             self.scene.draw()
 
         # On dessine les entités (PNJ, Ennemis, Boss)
-        if "pnjs" in self.tiroirs: self.tiroirs["pnjs"].draw()
+        # --- DESSIN DES PNJ (À ajouter ici) ---
+        if "pnj" in self.tiroirs:
+            self.tiroirs["pnj"].draw()
+
         if "ennemis" in self.tiroirs: self.tiroirs["ennemis"].draw()
         
         if "boss" in self.tiroirs:
@@ -1109,8 +1138,7 @@ class MonJeu(arcade.View):
 
         if self.mode_dev and self.interface_dev.ouvert:
             self.interface_dev.dessiner(self.fleur)
-        
-        
+              
 def main():
     window = arcade.Window(LARGEUR, HAUTEUR, TITRE)
     # --- MODIFICATION ICI : On lance le menu principal au lieu de la cinématique ---

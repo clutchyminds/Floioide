@@ -16,7 +16,7 @@ dossier_attaques = os.path.join(DOSSIER_DATA, "player", "attaque")
 VITESSE_MARCHE = 5
 VITESSE_DASH = 60
 VITESSE_SAUT = 12
-VITESSE_TIR = 10
+VITESSE_TIR = 448
 DISTANCE_MAX_TIR = 256
 
 # --- ENNEMIS ---
