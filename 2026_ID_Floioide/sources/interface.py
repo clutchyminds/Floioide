@@ -22,64 +22,75 @@ class HUD:
         self.tex_monnaie = arcade.load_texture(os.path.join(DOSSIER_DATA, "mobs", "PNJ", "monnaie.png"))
 
     def dessiner(self, joueur):
-        # On commence à 300 pour avoir la place pour 10 cœurs
-        for i in range(10):
-            x_coeur = 50 + i * 35  # Espacement de 35 pixels entre chaque cœur
-            y_coeur = 130          # Juste au-dessus de l'inventaire
+        # On gère l'affichage jusqu'à 15 coeurs (si le charme coeurs+5.png est là)
+        coeurs_a_dessiner = 15 if "coeurs+5.png" in joueur.inventaire_charmes else 10
+        
+        for i in range(coeurs_a_dessiner):
+            # Les 10 premiers cœurs sur la ligne du bas, les 5 autres au-dessus
+            ligne = i // 10
+            colonne = i % 10
+            x_coeur = 50 + colonne * 35 
+            y_coeur = 130 + ligne * 40 # +40 pixels plus haut pour la 2ème ligne
             
-            # Détermination de la texture (1 cœur = 10 PV)
             seuil_plein = (i + 1) * 10
             seuil_demi = seuil_plein - 5
             
-            if joueur.vie >= seuil_plein:
-                tex = self.tex_vie_1
-            elif joueur.vie > seuil_demi:
-                tex = self.tex_vie_05
-            else:
-                tex = self.tex_vie_0
+            if joueur.vie >= seuil_plein: tex = self.tex_vie_1
+            elif joueur.vie > seuil_demi: tex = self.tex_vie_05
+            else: tex = self.tex_vie_0
                 
             arcade.draw_texture_rect(tex, arcade.rect.XYWH(x_coeur, y_coeur, 32, 32))
-        
 
     def dessiner_inventaire_et_monnaie(self, joueur):
-        # --- 1. MONNAIE ---
-        # CORRECTION ICI : Remplacement de arcade.Rect par arcade.rect.XYWH
+        # 1. MONNAIE
         arcade.draw_texture_rect(self.tex_monnaie, arcade.rect.XYWH(LARGEUR - 150, 50, 40, 40))
         arcade.draw_text(f"{joueur.monnaie} $", LARGEUR - 100, 40, arcade.color.YELLOW, 18, bold=True)
-
-        # --- 2. INVENTAIRE (Au centre en bas) ---
-        for i in range(4):
-            x_slot = 400 + i * 100
+        
+        # 2. INVENTAIRE CONSOMMABLES (3 cases, horizontal, au milieu)
+        start_x = LARGEUR // 2 - 100
+        for i in range(3):
+            x_slot = start_x + i * 80
             y_slot = 50
-            rect = arcade.rect.XYWH(x_slot, y_slot, 80, 80)
-            arcade.draw_rect_outline(rect, arcade.color.WHITE, 3)
+            taille = 70 if i == joueur.index_selection else 60 # Grossit si sélectionné
+            rect = arcade.rect.XYWH(x_slot, y_slot, taille, taille)
+            
+            couleur_bord = arcade.color.YELLOW if i == joueur.index_selection else arcade.color.WHITE
+            arcade.draw_rect_outline(rect, couleur_bord, 3)
 
-            if joueur.inventaire[i] is not None:
-                # Code pour dessiner l'item ici plus tard
-                pass
+            item = joueur.inventaire_items[i]
+            if item is not None:
+                arcade.draw_texture_rect(item["tex"], arcade.rect.XYWH(x_slot, y_slot, taille - 10, taille - 10))
+                # Dessiner le nombre de l'item (stack) en bas à droite de la case
+                arcade.draw_text(f"x{item['qte']}", x_slot + 10, y_slot - 25, arcade.color.WHITE, 12, bold=True)
+                
+        # 3. INVENTAIRE CHARMES (4 cases, vertical, à gauche de l'écran par exemple)
+        for i in range(4):
+            x_slot = 40
+            y_slot = HAUTEUR // 2 + (i * 70) - 100
+            rect = arcade.rect.XYWH(x_slot, y_slot, 50, 50)
+            arcade.draw_rect_outline(rect, arcade.color.LIGHT_GRAY, 2)
+            
+            if i < len(joueur.inventaire_charmes):
+                nom_fichier = joueur.inventaire_charmes[i]
+                # Essai de chargement rapide de la texture du charme
+                try:
+                    tex_charme = arcade.load_texture(os.path.join(DOSSIER_DATA, "mobs", "PNJ", "items", nom_fichier))
+                    arcade.draw_texture_rect(tex_charme, arcade.rect.XYWH(x_slot, y_slot, 40, 40))
+                except: pass # Si image introuvable, on laisse vide
 
-        # --- 3. GOUTTE D'EAU / MANA (En haut à droite de l'inventaire) ---
+        # 4. GOUTTE D'EAU ET FLEUR DASH
         val_eau = max(0, min(100, int(joueur.eau // 25) * 25))
-        # TAILLE CORRIGÉE : 64x64 pour que la goutte soit parfaitement proportionnée
-        # CORRECTION ICI : Remplacement de arcade.Rect par arcade.rect.XYWH
         arcade.draw_texture_rect(self.textures_eau[val_eau], arcade.rect.XYWH(650, 140, 64, 64))
-        # Le texte s'affiche juste à côté de l'icône
         arcade.draw_text(f"{int(joueur.eau)}", 670, 130, arcade.color.CYAN, 18, bold=True)
 
-        # --- 4. FLEUR / DASH (À côté de la goutte d'eau) ---
         temps_restant = math.ceil(getattr(joueur, 'timer_dash', 0))
-        
         if temps_restant >= 5: val_nrj = 0
         elif temps_restant == 4: val_nrj = 25
         elif temps_restant == 3: val_nrj = 50
         elif temps_restant == 2: val_nrj = 75
         else: val_nrj = 100
         
-        # TAILLE CORRIGÉE : 64x64 pour que la fleur soit parfaite
-        # CORRECTION ICI : Remplacement de arcade.Rect par arcade.rect.XYWH
         arcade.draw_texture_rect(self.textures_nrj[val_nrj], arcade.rect.XYWH(740, 140, 64, 64))
-        
-        # Texte du minuteur de dash
         if temps_restant > 0:
             arcade.draw_text(f"{temps_restant}s", 765, 130, arcade.color.ORANGE, 18, bold=True)
         else:
@@ -104,28 +115,32 @@ class InterfaceShop:
             self.tex_btn = None
 
         # --- Chargement des Items ---
+        # --- Chargement des Items (remplacer l'ancien bloc par ça) ---
         self.items = []
-        self.charger_item("Eau de source", 10, "eau.1.png")
-        self.charger_item("Eau minérale", 25, "eau.2.png")
-        self.charger_item("Eau pure", 50, "eau.3.png")
-        self.charger_item("Petit Soin", 40, "Heal.1.png")
-        self.charger_item("Grand Soin", 80, "Heal.2.png")
+        self.charger_item("Eau de source", 10, "eau.1.png", "conso")
+        self.charger_item("Eau minérale", 25, "eau.2.png", "conso")
+        self.charger_item("Eau pure", 50, "eau.3.png", "conso")
+        self.charger_item("Petit Soin", 40, "Heal1.png", "conso")
+        self.charger_item("Grand Soin", 80, "Heal2.png", "conso")
+        self.charger_item("Piou Piou", 100, "piou.png", "arme")
+        # Les charmes
+        self.charger_item("Double Saut", 150, "2_saut.png", "charme")
+        self.charger_item("Argent x2", 200, "argentx2.png", "charme")
+        self.charger_item("Coeurs +5", 250, "coeurs+5.png", "charme")
 
         # Dimensions
-        self.btn_largeur = 130
+        self.btn_largeur = 200
         self.btn_hauteur = 50
         self.espacement_x = 195
         self.espacement_y = 70
 
-    def charger_item(self, nom, prix, fichier):
+    def charger_item(self, nom, prix, fichier, type_item):
         path = os.path.join(self.chemin_items, fichier)
         try:
             tex = arcade.load_texture(path)
         except:
-            # Si l'image bug, on met un carré bleu par défaut
             tex = arcade.make_soft_square_texture(40, arcade.color.BLUE)
-        
-        self.items.append({"nom": nom, "prix": prix, "icon": tex})
+        self.items.append({"nom": nom, "prix": prix, "fichier": fichier, "type": type_item, "icon": tex, "achete": False})
 
     def update_souris(self, x, y):
         self.souris_x = x
@@ -207,3 +222,91 @@ class Chat:
         for i, msg in enumerate(reversed(self.messages)):
             y = 150 + (i * 25)
             arcade.draw_text(msg["texte"], 20, y, msg["couleur"], 14)
+
+
+
+class InterfaceDev:
+    def __init__(self):
+        self.ouvert = False
+        self.souris_x = 0
+        self.souris_y = 0
+        
+        # Ce qu'on peut modifier et de combien ça augmente/baisse à chaque clic
+        self.lignes = [
+            {"nom": "Vitesse", "attr": "vitesse", "step": 1},
+            {"nom": "Saut", "attr": "puissance_saut", "step": 1},
+            {"nom": "Vitesse Dash", "attr": "vitesse_dash", "step": 5},
+            {"nom": "Taille", "attr": "scale", "step": 0.1},
+            {"nom": "Vie Max", "attr": "vie_max", "step": 10},
+            {"nom": "Vie", "attr": "vie", "step": 10},
+            {"nom": "Monnaie", "attr": "monnaie", "step": 10},
+        ]
+
+    def update_souris(self, x, y):
+        self.souris_x = x
+        self.souris_y = y
+
+    def dessiner(self, joueur):
+        if not self.ouvert: return
+        
+        # Fond semi-transparent
+        arcade.draw_rect_filled(arcade.rect.XYWH(LARGEUR//2, HAUTEUR//2, 400, 450), (0, 0, 0, 220))
+        arcade.draw_text("MENU DÉVELOPPEUR (F4)", LARGEUR//2, HAUTEUR//2 + 180, arcade.color.YELLOW, 18, bold=True, anchor_x="center")
+        
+        start_y = HAUTEUR//2 + 120
+        # Affichage des statistiques
+        for i, ligne in enumerate(self.lignes):
+            y = start_y - i * 40
+            valeur = getattr(joueur, ligne["attr"])
+            if isinstance(valeur, float): valeur = round(valeur, 2)
+            
+            # Nom de la stat
+            arcade.draw_text(f"{ligne['nom']} : {valeur}", LARGEUR//2 - 60, y, arcade.color.WHITE, 14, anchor_x="center", anchor_y="center")
+            
+            # Bouton [-]
+            couleur_m = arcade.color.RED if abs(self.souris_x - (LARGEUR//2 - 150)) < 15 and abs(self.souris_y - y) < 15 else arcade.color.DARK_RED
+            arcade.draw_rect_filled(arcade.rect.XYWH(LARGEUR//2 - 150, y, 30, 30), couleur_m)
+            arcade.draw_text("-", LARGEUR//2 - 150, y, arcade.color.WHITE, 16, bold=True, anchor_x="center", anchor_y="center")
+
+            # Bouton [+]
+            couleur_p = arcade.color.GREEN if abs(self.souris_x - (LARGEUR//2 + 150)) < 15 and abs(self.souris_y - y) < 15 else arcade.color.DARK_GREEN
+            arcade.draw_rect_filled(arcade.rect.XYWH(LARGEUR//2 + 150, y, 30, 30), couleur_p)
+            arcade.draw_text("+", LARGEUR//2 + 150, y, arcade.color.WHITE, 16, bold=True, anchor_x="center", anchor_y="center")
+
+        # Bouton Noclip (Vol)
+        y_noclip = start_y - len(self.lignes) * 40 - 20
+        couleur_noclip = arcade.color.GREEN if joueur.noclip else arcade.color.RED
+        arcade.draw_rect_filled(arcade.rect.XYWH(LARGEUR//2, y_noclip, 200, 40), couleur_noclip)
+        texte_noclip = "Noclip / Vol : ON" if joueur.noclip else "Noclip / Vol : OFF"
+        arcade.draw_text(texte_noclip, LARGEUR//2, y_noclip, arcade.color.WHITE, 14, bold=True, anchor_x="center", anchor_y="center")
+
+    def on_mouse_press(self, x, y, joueur):
+        start_y = HAUTEUR//2 + 120
+        for i, ligne in enumerate(self.lignes):
+            ly = start_y - i * 40
+            
+            # Détection du clic
+            if abs(y - ly) < 15:
+                # --- CALCUL DU CHANGEMENT ---
+                changement = 0
+                if abs(x - (LARGEUR//2 - 150)) < 15: # Bouton [-]
+                    changement = -ligne["step"]
+                elif abs(x - (LARGEUR//2 + 150)) < 15: # Bouton [+]
+                    changement = ligne["step"]
+
+                if changement != 0:
+                    # Cas spécial pour la TAILLE (Scale) car c'est un tuple dans Arcade 3.0
+                    if ligne["attr"] == "scale":
+                        ancienne_taille = joueur.scale[0] # On prend la largeur actuelle
+                        nouvelle_taille = max(0.1, ancienne_taille + changement)
+                        joueur.scale = (nouvelle_taille, nouvelle_taille)
+                    else:
+                        valeur_actuelle = getattr(joueur, ligne["attr"])
+                        setattr(joueur, ligne["attr"], valeur_actuelle + changement)
+
+        # --- CLIC SUR LE BOUTON NOCLIP (C'est ici que ça coince souvent) ---
+        y_noclip = start_y - len(self.lignes) * 40 - 20
+        # On vérifie si la souris est dans le rectangle central du Noclip
+        if abs(x - LARGEUR//2) < 100 and abs(y - y_noclip) < 20:
+            joueur.noclip = not joueur.noclip
+            print(f"Noclip basculé : {joueur.noclip}") # Pour vérifier dans la console

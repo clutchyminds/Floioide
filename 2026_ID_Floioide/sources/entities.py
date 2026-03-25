@@ -3,7 +3,7 @@ import math
 import random 
 import os
 import arcade
-from sources.constantes import DOSSIER_DATA, DOSSIER_BOSS, GRAVITE, TAILLE_TUILE, VITESSE_MARCHE, VITESSE_DASH, VITESSE_SAUT, VITESSE_TIR, DISTANCE_MAX_TIR
+from sources.constantes import DOSSIER_DATA, DOSSIER_BOSS, GRAVITE, LARGEUR, HAUTEUR, TAILLE_TUILE, VITESSE_MARCHE, VITESSE_DASH, VITESSE_SAUT, VITESSE_TIR, DISTANCE_MAX_TIR
 from arcade.hitbox import HitBox
 
 
@@ -33,12 +33,23 @@ class Joueur(EntiteAnimee):
 
 
         # --- SYSTÈME D'INVENTAIRE (4 CASES) ---
-        self.inventaire = [None, None, None, None] # 4 emplacements vides
+        # 3 cases pour le consommable/armes (Dictionnaire : {nom, fichier, qte, tex})
+        self.inventaire_items = [None, None, None] 
+        # 4 cases maximum pour les charmes (On stocke juste le nom du fichier)
+        self.inventaire_charmes = ["dash.png"] 
+        self.index_selection = 0 # Case actuellement sélectionnée (0, 1 ou 2)
+        
+        # Variables pour les effets des charmes
+        self.double_saut_dispo = False 
+        self.etat_suppression = False # Pour la confirmation d'abandon d'item
         self.index_inventaire = 0
 
         # initialisation avec scale 0.4
         super().__init__(x, y, scale=0.1)
         
+        chemin = os.path.join(DOSSIER_DATA, "player", "player.png")
+        self.texture = arcade.load_texture(chemin)
+
         # dossiers des images
         doss_p = os.path.join(DOSSIER_DATA, "player")
         doss_m = os.path.join(doss_p, "mouvements")
@@ -85,10 +96,16 @@ class Joueur(EntiteAnimee):
         self.en_escalade = False
         self.au_sol = False
         
+
         self.timer_dash = 0.0  # Minuteur actuel (0 = prêt)
         self.delai_dash = 5.0  # Le dash met 5 secondes à recharger
         self.eau = 100.0       # Eau actuelle
         self.eau_max = 100.0   # Eau maximum
+
+        self.vitesse = VITESSE_MARCHE
+        self.vitesse_dash = VITESSE_DASH
+        self.puissance_saut = VITESSE_SAUT
+        self.noclip = False
 
         # 3. hitbox fixe obligatoire pour arcade 3.0
         self.hit_box_algorithm = "None"
@@ -96,75 +113,88 @@ class Joueur(EntiteAnimee):
         self.hit_box_perso = HitBox([(-t, -t), (t, -t), (t, t), (-t, t)])
         self.hit_box = self.hit_box_perso
 
-    def update_animation(self, delta_time=1/60):
+        self.dash_cooldown = 0.0  # Pour la fleur (5.0 -> 0)
+        self.dash_duree = 0.0
 
+    def update_animation(self, delta_time=1/60):
+        # --- 1. GESTION DES TIMERS ---
         if self.invul_timer > 0:
             self.invul_timer -= delta_time
-        else:
-            self.invul_timer = 0
-
-        if hasattr(self, 'timer_dash') and self.timer_dash > 0:
-            self.timer_dash -= delta_time
-            if self.timer_dash < 0:
-                self.timer_dash = 0
-
-        # calcul du temps pour changer d image
-        self.temps_ecoule += delta_time
         
-        # choix de la liste d images
-        textures_a_voir = [self.tex_idle]
-        vit = self.vitesse_animation
+        if self.dash_cooldown > 0:
+            self.dash_cooldown -= delta_time
 
-        if self.change_x < 0:
-            self.flip_left_right = True  # Regarde à gauche
-        elif self.change_x > 0:
-            self.flip_left_right = False # Regarde à droite
+        # Gestion du Dash (mouvement et durée)
+        if self.en_dash:
+            self.dash_duree += delta_time
+            if self.dash_duree > 0.2:
+                self.en_dash = False
+                self.dash_duree = 0
+                self.change_x = 0
 
-        # logic de selection des images
-        if self.etat == "ATTAQUE":
+        # --- 2. DETERMINATION DU SENS (ORIENTATION) ---
+        # On change la direction SEULEMENT si on bouge. 
+        # Si on s'arrête pour attaquer, self.face_gauche garde sa valeur (True ou False).
+        if self.change_x < -0.1:
+            self.face_gauche = True
+        elif self.change_x > 0.1:
+            self.face_gauche = False
+
+        # --- 3. SELECTION DE LA LISTE D'IMAGES (PRIORITÉS) ---
+        if self.en_dash:
+            self.etat = "DASH"
+            textures_a_voir = [self.tex_dash]
+            vit = 0.1
+        elif self.etat == "ATTAQUE":
+            # L'attaque reste ici tant que l'animation n'est pas finie
             textures_a_voir = self.textures_attaque
             vit = 0.05
-        elif self.en_dash:
-            textures_a_voir = [self.tex_dash]
         elif self.en_escalade:
             textures_a_voir = self.anims_grimper
-        # si change_y est different de 0, on considere qu'on saute (securite)
+            vit = self.vitesse_animation
         elif abs(self.change_y) > 0.1: 
+            self.etat = "SAUT"
             textures_a_voir = [self.tex_saut]
+            vit = 0.1
         elif abs(self.change_x) > 0.1:
+            self.etat = "MARCHE"
             textures_a_voir = self.anims_marche
+            vit = self.vitesse_animation
         else:
+            self.etat = "IDLE"
             textures_a_voir = [self.tex_idle]
+            vit = self.vitesse_animation
 
-        # changement d image si le temps est ecoule
+        # --- 4. GESTION DU TIMER D'ANIMATION ---
+        self.temps_ecoule += delta_time
+        
+        # Sécurité si on change d'animation (ex: Marche -> Attaque)
+        if self.frame_actuelle >= len(textures_a_voir):
+            self.frame_actuelle = 0
+
         if self.temps_ecoule > vit:
             self.temps_ecoule = 0
             self.frame_actuelle += 1
             
-            # remise a zero si fin de liste
+            # Si on arrive à la fin de la liste d'images
             if self.frame_actuelle >= len(textures_a_voir):
                 self.frame_actuelle = 0
+                # TRÈS IMPORTANT : On quitte l'état ATTAQUE ici
                 if self.etat == "ATTAQUE":
                     self.etat = "IDLE"
 
-            # selection de la texture
-            base = textures_a_voir[self.frame_actuelle]
-            
-            # gestion du sens (gauche ou droite)
-            if self.change_x < -0.1: self.face_gauche = True
-            elif self.change_x > 0.1: self.face_gauche = False
-            
-            if self.face_gauche:
-                self.texture = base.flip_left_right()
-            else:
-                self.texture = base
+        # --- 5. APPLICATION FINALE DE LA TEXTURE ET DU FLIP ---
+        # On récupère l'image actuelle dans la liste choisie
+        base = textures_a_voir[self.frame_actuelle]
+        
+        # On applique le miroir selon face_gauche à CHAQUE frame
+        if self.face_gauche:
+            self.texture = base.flip_left_right()
+        else:
+            self.texture = base
 
-        # securite pour garder la meme hitbox
+        # Sécurité Hitbox
         self.hit_box = self.hit_box_perso
-        if hasattr(self, 'timer_dash') and self.timer_dash > 0:
-            self.timer_dash -= delta_time
-            if self.timer_dash < 0:
-                self.timer_dash = 0
 
 class Boss(EntiteAnimee):
     def __init__(self, x, y):
@@ -332,6 +362,7 @@ class PNJ(arcade.Sprite):
             self.tex1 = arcade.make_soft_square_texture(50, arcade.color.BLUE)
             self.tex2 = arcade.make_soft_square_texture(50, arcade.color.LIGHT_BLUE)
 
+        self.est_marchand = True
         self.texture = self.tex1
         self.timer_anim = 0
         self.est_survole = False
@@ -377,13 +408,14 @@ class EffetAttaque(arcade.Sprite):
     def __init__(self, joueur, dossier):
         super().__init__(scale=0.4)
         
-        self.direction = -1 if joueur.flip_left_right else 1
-        self.center_x = joueur.center_x + (self.direction * 50) # Décale de 50 pixels devant le nez du joueur
+        self.direction = -1 if joueur.face_gauche else 1
+
+        self.center_x = joueur.center_x + (self.direction * 50)
         self.center_y = joueur.center_y
         
         # Correction de l'erreur : on utilise flip_left_right
         # Si le joueur regarde à gauche, l'attaque doit être à gauche
-        self.direction = -1 if joueur.flip_left_right else 1
+       
         
         # On décale l'effet un peu devant le joueur
         self.center_x += self.direction * 40

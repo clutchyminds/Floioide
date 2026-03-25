@@ -6,9 +6,33 @@ from sources.constantes import *
 from sources.inputs import InputHandler
 from sources.logic import gerer_collisions
 from sources.entities import Joueur, Boss, MobDesertSol, MobForetSol, MobVilleSol, PNJ, EffetAttaque, BossArbreP1, BossArbreP2, BossArbreP3
-from sources.interface import HUD, Chat, InterfaceShop
+from sources.interface import HUD, Chat, InterfaceShop, InterfaceDev
 import math
 from arcade.hitbox import HitBox
+
+
+class ProjectileJoueur(arcade.Sprite):
+    def __init__(self, x, y, dest_x, dest_y):
+        chemin = os.path.join(DOSSIER_DATA, "mobs", "PNJ", "items", "balle.png")
+        try: tex = arcade.load_texture(chemin)
+        except: tex = arcade.make_soft_square_texture(10, arcade.color.YELLOW)
+        super().__init__(tex, scale=0.8)
+        self.center_x, self.center_y = x, y
+        self.degats = 2
+        self.timer_vie = 0
+        
+        angle = math.atan2(dest_y - y, dest_x - x)
+        # 128px par seconde
+        self.vitesse_x = math.cos(angle) * 128
+        self.vitesse_y = math.sin(angle) * 128
+        self.angle = math.degrees(angle)
+
+    def update_proj(self, delta_time):
+        self.center_x += self.vitesse_x * delta_time
+        self.center_y += self.vitesse_y * delta_time
+        self.timer_vie += delta_time
+        if self.timer_vie > 5.0:
+            self.remove_from_sprite_lists()
 
 class EcranChargementView(arcade.View):
     def __init__(self, vue_suivante_class):
@@ -113,8 +137,12 @@ class MenuPrincipalView(arcade.View):
             self.btn_jouer = arcade.make_soft_square_texture(200, arcade.color.DARK_GREEN)
             self.btn_aide = arcade.make_soft_square_texture(200, arcade.color.DARK_BLUE)
             
-        # Tailles des boutons
-        
+        self.historique = []
+        # Code 1 : h, h, b, b, g, d, g, d, a, b, s
+        self.code_dev_1 = [arcade.key.H, arcade.key.H, arcade.key.B, arcade.key.B, arcade.key.G, arcade.key.D, arcade.key.G, arcade.key.D, arcade.key.A, arcade.key.B, arcade.key.S]
+        # Code 2 : Haut, Haut, Bas, Bas, Gauche, Droite, Gauche, Droite, A, B, Entrée
+        self.code_dev_2 = [arcade.key.UP, arcade.key.UP, arcade.key.DOWN, arcade.key.DOWN, arcade.key.LEFT, arcade.key.RIGHT, arcade.key.LEFT, arcade.key.RIGHT, arcade.key.A, arcade.key.B, arcade.key.ENTER]
+
         
 
     def on_update(self, delta_time):
@@ -144,7 +172,7 @@ class MenuPrincipalView(arcade.View):
         w_jouer = self.w_btn_base * scale_jouer
         h_jouer = self.h_btn_base * scale_jouer
         arcade.draw_texture_rect(self.btn_jouer, arcade.rect.XYWH(self.x_btn, self.y_jouer, w_jouer, h_jouer))
-        arcade.draw_text("Jouer", self.x_btn, self.y_jouer, arcade.color.WHITE, int(20 * scale_jouer), bold=True, anchor_x="center", anchor_y="center")
+        arcade.draw_text("", self.x_btn, self.y_jouer, arcade.color.WHITE, int(20 * scale_jouer), bold=True, anchor_x="center", anchor_y="center")
         
         # --- BOUTON AIDE : Détection du survol ---
         survol_aide = abs(self.mouse_x - self.x_btn) < self.w_btn_base/2 and abs(self.mouse_y - self.y_aide) < self.h_btn_base/2
@@ -153,7 +181,7 @@ class MenuPrincipalView(arcade.View):
         w_aide = self.w_btn_base * scale_aide
         h_aide = self.h_btn_base * scale_aide
         arcade.draw_texture_rect(self.btn_aide, arcade.rect.XYWH(self.x_btn, self.y_aide, w_aide, h_aide))
-        arcade.draw_text("Aide", self.x_btn, self.y_aide, arcade.color.WHITE, int(20 * scale_aide), bold=True, anchor_x="center", anchor_y="center")
+        arcade.draw_text("", self.x_btn, self.y_aide, arcade.color.WHITE, int(20 * scale_aide), bold=True, anchor_x="center", anchor_y="center")
 
     def on_mouse_press(self, x, y, button, modifiers):
         if button == arcade.MOUSE_BUTTON_LEFT:
@@ -162,6 +190,19 @@ class MenuPrincipalView(arcade.View):
                 self.window.show_view(EcranChargementView(CinematiqueView))
             elif abs(x - self.x_btn) < self.w_btn_base/2 and abs(y - self.y_aide) < self.h_btn_base/2:
                 self.window.show_view(MenuAideView())
+
+    def on_key_press(self, key, modifiers):
+        self.historique.append(key)
+        # On ne garde que les 11 dernières touches
+        if len(self.historique) > 11:
+            self.historique.pop(0)
+
+        # Si l'un des deux codes est tapé, on lance MonJeu en dev mode !
+        if self.historique == self.code_dev_1 or self.historique == self.code_dev_2:
+            print("MODE DÉVELOPPEUR ACTIVÉ !")
+            vue_jeu = MonJeu(mode_dev=True)
+            vue_jeu.setup()
+            self.window.show_view(vue_jeu)
 
 class CinematiqueView(arcade.View):
     def __init__(self):
@@ -172,6 +213,7 @@ class CinematiqueView(arcade.View):
         self.musique_fond = arcade.load_sound(chemin_musique)
         self.lecteur_musique = arcade.play_sound(self.musique_fond, volume=0.5, loop=True)
 
+        
 
         #12 textes pour l'intro du jeu
         self.textes = [
@@ -269,18 +311,29 @@ class CinematiqueView(arcade.View):
 
 
 class MonJeu(arcade.View):
-    def __init__(self):
+    def __init__(self, mode_dev=False):
         super().__init__()
 
         self.scene = None
         
         self.etat_boss_tron = 0
 
+        
+        self.mode_dev = mode_dev
+
+        self.interface_dev = InterfaceDev()
+
         self.camera_sprites = arcade.camera.Camera2D()
         self.camera_gui = arcade.camera.Camera2D()
 
         self.tiroirs = {}
         self.lecteur_musique = None
+
+        self.mouse_world_x = 0
+        self.mouse_world_y = 0
+        self.timer_general = 0 # Pour faire tourner les charmes
+        # Dans le setup(), ajoute :
+        self.tiroirs["projectiles_joueur"] = arcade.SpriteList()
 
         # 1. Organisation des listes d'objets (SpriteLists)
         self.tiroirs = {
@@ -292,8 +345,9 @@ class MonJeu(arcade.View):
             "tirs": arcade.SpriteList(),
             "joueur": arcade.SpriteList(),
             "pnjs": arcade.SpriteList(),
-            "boss": arcade.SpriteList(),               # <-- AJOUTE POUR LE BOSS
-            "projectiles_ennemis": arcade.SpriteList(), # <-- AJOUTE POUR LES PROJECTILES DES ENNEMIS
+            "boss": arcade.SpriteList(),             
+            "projectiles_ennemis": arcade.SpriteList(), 
+            "projectiles_joueur": arcade.SpriteList()
         }
         
         # variables pour gerer le systeme de boss
@@ -436,31 +490,122 @@ class MonJeu(arcade.View):
             elif key == arcade.key.BACKSPACE:
                 self.chat.texte_saisie = self.chat.texte_saisie[:-1]
             return # Bloque les mouvements quand on écrit
-        
+
+        if (key == arcade.key.LSHIFT or key == arcade.key.RSHIFT):
+        # On vérifie si le cooldown est fini (variable à créer dans Joueur)
+            if getattr(self.fleur, 'dash_cooldown', 0) <= 0:
+                self.fleur.en_dash = True
+                self.fleur.dash_cooldown = 5.0 # Temps de recharge
+                self.fleur.dash_duree = 0      # Temps du mouvement
+                self.chat.ajouter_message("DASH !", arcade.color.GOLD)
             
         
         self.inputs.on_key_press(key)
         # Saut simple (uniquement si au sol)
         if key == arcade.key.SPACE and self.physique.can_jump():
-            self.fleur.change_y = VITESSE_SAUT
+            self.fleur.change_y = self.fleur.puissance_saut
+
         if key == arcade.key.SPACE or key == arcade.key.Z:
             if self.physique.can_jump():
                 arcade.play_sound(self.son_saut, volume=0.3)
+
         if key == arcade.key.F3:
             self.show_debug = not self.show_debug
 
-        if key == arcade.key.LSHIFT: # Si on appuie sur Dash
-            if self.fleur.energie >= 100: # On ne dash que si la barre est pleine
-                self.fleur.energie = 0   # On vide la barre
-                # Lancer ton code de Dash ici (vitesse_boost, etc.)
+        if key == arcade.key.LSHIFT:
+            # Si on appuie sur Dash
+            if self.fleur.energie >= 100: 
+                self.fleur.energie = 0
+                self.fleur.en_dash = True # Active l'animation de dash
+                
+                # Appliquer la vitesse du dash selon la direction où regarde le joueur
+                direction = -1 if self.fleur.face_gauche else 1
+                self.fleur.change_x = direction * self.fleur.vitesse_dash
+                
                 self.chat.ajouter_message("DASH !", arcade.color.GOLD)
             else:
                 self.chat.ajouter_message("Énergie insuffisante...", arcade.color.GRAY)
 
-    def on_key_release(self, key, modifiers):
+        if key == arcade.key.F4 and self.mode_dev:
+            self.interface_dev.ouvert = not self.interface_dev.ouvert
+            return # On bloque les autres inputs si on veut
+
+        # Double Saut logic
+        if key == arcade.key.SPACE:
+            if self.physique.can_jump():
+                self.fleur.change_y = self.fleur.puissance_saut
+                self.fleur.double_saut_dispo = True
+                arcade.play_sound(self.son_saut, volume=0.3)
+            elif "2_saut.png" in self.fleur.inventaire_charmes and self.fleur.double_saut_dispo:
+                # Si on a le charme et qu'on n'a pas encore double sauté
+                self.fleur.change_y = self.fleur.puissance_saut
+                self.fleur.double_saut_dispo = False
+                arcade.play_sound(self.son_saut, volume=0.3)
+
+        # Drop item
+        if key == arcade.key.A and not self.fleur.etat_suppression:
+            if self.fleur.inventaire_items[self.fleur.index_selection] is not None:
+                self.fleur.etat_suppression = True
+                
+        # Handle Pop-up Oui/Non
+        if self.fleur.etat_suppression:
+            if key == arcade.key.O or key == arcade.key.ENTER:
+                self.fleur.inventaire_items[self.fleur.index_selection] = None
+                self.fleur.etat_suppression = False
+            elif key == arcade.key.N or key == arcade.key.ESCAPE:
+                self.fleur.etat_suppression = False
+
+        # Utiliser l'objet sélectionné
+        if key == arcade.key.ENTER and not self.fleur.etat_suppression and not self.chat.actif:
+            item = self.fleur.inventaire_items[self.fleur.index_selection]
+            if item is not None:
+                fichier = item["fichier"]
+                utilise = False
+                
+                if fichier == "Heal1.png" and self.fleur.vie < self.fleur.vie_max:
+                    self.fleur.vie = min(self.fleur.vie_max, self.fleur.vie + 20)
+                    utilise = True
+                elif fichier == "Heal2.png" and self.fleur.vie < self.fleur.vie_max:
+                    self.fleur.vie = min(self.fleur.vie_max, self.fleur.vie + 50)
+                    utilise = True
+                elif fichier == "eau.1.png" and self.fleur.eau < 100:
+                    self.fleur.eau = min(100, self.fleur.eau + 20)
+                    utilise = True
+                elif fichier == "eau.2.png" and self.fleur.eau < 100:
+                    self.fleur.eau = min(100, self.fleur.eau + 40)
+                    utilise = True
+                elif fichier == "eau.3.png" and self.fleur.eau < 100:
+                    self.fleur.eau = min(100, self.fleur.eau + 60)
+                    utilise = True
+                elif fichier == "piou.png":
+                    # Tirer la balle
+                    balle = ProjectileJoueur(self.fleur.center_x, self.fleur.center_y + 20, self.mouse_world_x, self.mouse_world_y)
+                    self.tiroirs["projectiles_joueur"].append(balle)
+                    # "Piou" n'est pas consommé
+                
+                # Réduction du stack si consommé
+                if utilise:
+                    item["qte"] -= 1
+                    if item["qte"] <= 0:
+                        self.fleur.inventaire_items[self.fleur.index_selection] = None
+
+    def on_key_release(self, key, modifiers):   
         self.inputs.on_key_release(key)
+    
+    def on_mouse_scroll(self, x: int, y: int, scroll_x: int, scroll_y: int):
+        # Changement de slot avec la molette
+        if scroll_y > 0:
+            self.fleur.index_selection = (self.fleur.index_selection - 1) % 3
+        elif scroll_y < 0:
+            self.fleur.index_selection = (self.fleur.index_selection + 1) % 3
 
     def on_mouse_motion(self, x, y, dx, dy):
+        if self.mode_dev:
+            self.interface_dev.update_souris(x, y)
+        
+        self.mouse_world_x = x + self.camera_jeu.position.x
+        self.mouse_world_y = y + self.camera_jeu.position.y
+
         # 1. Ajustement par rapport à la caméra
         # Si tu utilises Camera2D dans Arcade 3.0, c'est bottom_left.x !
         # Si tu utilises l'ancienne Camera, c'est position.x
@@ -495,6 +640,25 @@ class MonJeu(arcade.View):
                 pnj.mouse_over = False
 
     def on_mouse_press(self, x, y, button, modifiers):
+        if self.mode_dev and self.interface_dev.ouvert:
+            self.interface_dev.on_mouse_press(x, y, self.fleur)
+            return # On bloque l'attaque si on clique dans le menu
+        
+        
+        if button == arcade.MOUSE_BUTTON_RIGHT:
+            # On vérifie si le joueur a le fusil (à adapter selon ta logique d'inventaire)
+            if self.fleur.item_tenu == "fusil": 
+                # On calcule la position réelle dans le monde (avec la caméra)
+                bx = x + self.camera_jeu.position.x
+                by = y + self.camera_jeu.position.y
+                
+                # Création du projectile
+                balle = ProjectileJoueur(self.fleur.center_x, self.fleur.center_y, bx, by)
+                
+                # --- LA CORRECTION EST ICI ---
+                if "projectiles_joueur" in self.tiroirs:
+                    self.tiroirs["projectiles_joueur"].append(balle)
+
         # --- A. SI LE SHOP EST DÉJÀ OUVERT ---
         if self.shop.ouvert:
             res = self.shop.on_mouse_press(x, y)
@@ -503,10 +667,45 @@ class MonJeu(arcade.View):
                 self.shop.ouvert = False
                 self.cooldown_shop = 2.0 # On attend 2s
             
-            elif isinstance(res, dict): # Si c'est un dictionnaire, c'est un item
+            elif isinstance(res, dict) and not res.get("achete", False): 
                 if self.fleur.monnaie >= res["prix"]:
-                    self.fleur.monnaie -= res["prix"]
-                    self.chat.ajouter_message(f"Achat : {res['nom']}", arcade.color.GREEN)
+                    if res["type"] == "charme":
+                        if len(self.fleur.inventaire_charmes) < 4:
+                            self.fleur.monnaie -= res["prix"]
+                            self.fleur.inventaire_charmes.append(res["fichier"])
+                            res["achete"] = True # Disparaît de la boutique
+                            self.chat.ajouter_message(f"Charme {res['nom']} équipé !", arcade.color.PURPLE)
+                            
+                            # Si c'est le charme de vie, on applique l'effet direct
+                            if res["fichier"] == "coeurs+5.png":
+                                self.fleur.vie_max = 150
+                                self.fleur.vie += 50
+                        else:
+                            self.chat.ajouter_message("Barre de charmes pleine !", arcade.color.RED)
+                    else:
+                        # Consommable ou Arme (Empilable)
+                        trouve = False
+                        for item in self.fleur.inventaire_items:
+                            if item is not None and item["fichier"] == res["fichier"]:
+                                item["qte"] += 1
+                                trouve = True
+                                break
+                        
+                        if not trouve: # Si pas trouvé dans le stack, on cherche une case vide
+                            for i in range(3):
+                                if self.fleur.inventaire_items[i] is None:
+                                    self.fleur.inventaire_items[i] = {
+                                        "nom": res["nom"], "fichier": res["fichier"], 
+                                        "qte": 1, "tex": res["icon"]
+                                    }
+                                    trouve = True
+                                    break
+                                    
+                        if trouve:
+                            self.fleur.monnaie -= res["prix"]
+                            self.chat.ajouter_message(f"Achat : {res['nom']}", arcade.color.GREEN)
+                        else:
+                            self.chat.ajouter_message("Inventaire plein !", arcade.color.RED)
                 else:
                     self.chat.ajouter_message("Pas assez d'argent !", arcade.color.RED)
             return
@@ -575,62 +774,73 @@ class MonJeu(arcade.View):
         self.fleur.en_dash = est_en_train_de_dasher
 
         # 3. CALCUL DES MOUVEMENTS
-        vitesse = VITESSE_MARCHE
+        vitesse = self.fleur.vitesse
         direction_horizontale = self.inputs.droite - self.inputs.gauche
+        direction_verticale = self.inputs.haut - self.inputs.bas
         
-        # Déclenchement du dash
-        if self.inputs.shift and self.fleur.timer_dash <= 0 and self.fleur.eau >= 10:
-            self.fleur.eau -= 10
-            self.fleur.timer_dash = 7.0
-            self.fleur.change_y = 0 
-
-        if est_en_train_de_dasher:
-            vitesse = VITESSE_DASH
-            self.fleur.change_y = 0 
-            if direction_horizontale == 0:
-                direction_horizontale = -1 if self.fleur.flipped_horizontally else 1
-        
-        self.fleur.change_x = direction_horizontale * vitesse
-
-        # 4. GESTION DU SENS DU SPRITE (Le "Flip")
-        if self.fleur.change_x < 0:
-            self.fleur.flipped_horizontally = True
-        elif self.fleur.change_x > 0:
-            self.fleur.flipped_horizontally = False
-
-        # 5. PHYSIQUE ET ESCALADE
-        if est_en_train_de_dasher:
-            # Mode Dash : mouvement simple à travers/contre les murs
+        if self.fleur.noclip:
+            # --- MODE VOL / NOCLIP ---
+            self.fleur.change_x = direction_horizontale * vitesse * 2 # Plus rapide en vol
+            self.fleur.change_y = direction_verticale * vitesse * 2
             self.fleur.center_x += self.fleur.change_x
-            if arcade.check_for_collision_with_list(self.fleur, self.tiroirs["murs"]):
-                self.fleur.center_x -= self.fleur.change_x
+            self.fleur.center_y += self.fleur.change_y
+            # On ignore complètement l'update physique et l'escalade normale
         else:
-            # Système d'escalade simplifié
-            self.fleur.en_escalade = False 
-            if direction_horizontale != 0:
-                # On teste si un mur est présent juste à côté (2 pixels)
-                self.fleur.center_x += (direction_horizontale * 2)
-                contact_mur = arcade.check_for_collision_with_list(self.fleur, self.tiroirs["murs"])
-                self.fleur.center_x -= (direction_horizontale * 2) # On remet le joueur en place
-                
-                if contact_mur:
-                    self.fleur.en_escalade = True
 
-            # Application de la physique
-            if self.fleur.en_escalade:
-                self.fleur.change_x = 0
-                self.fleur.change_y = VITESSE_MARCHE
-                self.fleur.center_y += self.fleur.change_y
+            # Déclenchement du dash
+            if self.inputs.shift and self.fleur.timer_dash <= 0 and self.fleur.eau >= 10:
+                self.fleur.eau -= 10
+                self.fleur.timer_dash = 7.0
+                self.fleur.change_y = 0 
+
+            if est_en_train_de_dasher:
+                vitesse = VITESSE_DASH
+                self.fleur.change_y = 0 
+                if direction_horizontale == 0:
+                    direction_horizontale = -1 if self.fleur.flipped_horizontally else 1
+            
+            self.fleur.change_x = direction_horizontale * vitesse
+
+            # 4. GESTION DU SENS DU SPRITE (Le "Flip")
+            if self.fleur.change_x < 0:
+                self.fleur.flipped_horizontally = True
+            elif self.fleur.change_x > 0:
+                self.fleur.flipped_horizontally = False
+
+            # 5. PHYSIQUE ET ESCALADE
+            if est_en_train_de_dasher:
+                # Mode Dash : mouvement simple à travers/contre les murs
+                self.fleur.center_x += self.fleur.change_x
                 if arcade.check_for_collision_with_list(self.fleur, self.tiroirs["murs"]):
-                    self.fleur.center_y -= self.fleur.change_y # Annule le mouvement
-                    self.fleur.en_escalade = False
+                    self.fleur.center_x -= self.fleur.change_x
             else:
-                # Gravité et sauts normaux (seulement si on n'escalade pas)
-                self.physique.update()
+                # Système d'escalade simplifié
+                self.fleur.en_escalade = False 
+                if direction_horizontale != 0:
+                    # On teste si un mur est présent juste à côté (2 pixels)
+                    self.fleur.center_x += (direction_horizontale * 2)
+                    contact_mur = arcade.check_for_collision_with_list(self.fleur, self.tiroirs["murs"])
+                    self.fleur.center_x -= (direction_horizontale * 2) # On remet le joueur en place
+                    
+                    if contact_mur:
+                        self.fleur.en_escalade = True
+
+                # Application de la physique
+                if self.fleur.en_escalade:
+                    self.fleur.change_x = 0
+                    self.fleur.change_y = VITESSE_MARCHE
+                    self.fleur.center_y += self.fleur.change_y
+                    if arcade.check_for_collision_with_list(self.fleur, self.tiroirs["murs"]):
+                        self.fleur.center_y -= self.fleur.change_y # Annule le mouvement
+                        self.fleur.en_escalade = False
+                else:
+                    # Gravité et sauts normaux (seulement si on n'escalade pas)
+                    self.physique.update()
 
         # 6. ANIMATIONS ET CAMÉRA
         self.fleur.update_animation(delta_time)
         self.camera_jeu.position = (self.fleur.center_x, self.fleur.center_y)
+        self.camera_jeu.position = self.fleur.position
 
         # 7. LOGIQUE DE JEU (Collisions, Pluie, Ennemis)
         gerer_collisions(self.tiroirs) 
@@ -826,6 +1036,26 @@ class MonJeu(arcade.View):
 
         self.camera_sprites.position = (self.fleur.center_x, self.fleur.center_y)
 
+        self.timer_general += delta_time
+        
+        # Update les balles de Piou
+        if "projectiles_joueur" in self.tiroirs:
+            
+            for proj in self.tiroirs["projectiles_joueur"]:
+                proj.update_proj(delta_time)
+                # Dégâts aux ennemis / boss
+                listes_cibles = [self.tiroirs.get("ennemis", []), self.tiroirs.get("boss", [])]
+                pour_supprimer = False
+                for liste in listes_cibles:
+                    touches = arcade.check_for_collision_with_list(proj, liste)
+                    for cible in touches:
+                        if hasattr(cible, "pv"): cible.pv -= proj.degats
+                        elif hasattr(cible, "points_de_vie"): cible.points_de_vie -= proj.degats
+                        pour_supprimer = True
+                if pour_supprimer:
+                    proj.remove_from_sprite_lists()
+
+                        
     def on_draw(self):
         # 1. On nettoie l'écran
         self.clear()
@@ -850,6 +1080,9 @@ class MonJeu(arcade.View):
         if "projectiles_ennemis" in self.tiroirs: self.tiroirs["projectiles_ennemis"].draw()
         if "attaques" in self.tiroirs: self.tiroirs["attaques"].draw()
 
+        if "projectiles_joueur" in self.tiroirs:
+            self.tiroirs["projectiles_joueur"].draw()
+
         # --- IMPORTANT : LE JOUEUR DOIT ÊTRE ICI ---
         # Pour qu'il se déplace sur la carte et pas qu'il soit collé à l'écran
         if "joueur" in self.tiroirs:
@@ -873,7 +1106,11 @@ class MonJeu(arcade.View):
         if self.show_debug:
             debug_txt = f"X: {int(self.fleur.center_x)} Y: {int(self.fleur.center_y)}\nFPS: {int(arcade.get_fps())}"
             arcade.draw_text(debug_txt, 20, HAUTEUR - 60, arcade.color.GREEN, 12, multiline=True, width=400)
-            
+
+        if self.mode_dev and self.interface_dev.ouvert:
+            self.interface_dev.dessiner(self.fleur)
+        
+        
 def main():
     window = arcade.Window(LARGEUR, HAUTEUR, TITRE)
     # --- MODIFICATION ICI : On lance le menu principal au lieu de la cinématique ---

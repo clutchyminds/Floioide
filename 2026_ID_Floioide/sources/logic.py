@@ -5,8 +5,10 @@ def gerer_collisions(tiroirs):
     if "attaques" not in tiroirs or not tiroirs["attaques"]:
         return
     
-    if "joueur" in tiroirs:
+    if "joueur" in tiroirs and len(tiroirs["joueur"]) > 0:
         joueur = tiroirs["joueur"][0]
+    else:
+        return
 
     for attaque in tiroirs["attaques"]:
         # 2. On prépare la liste des cibles (mobs + boss)
@@ -26,26 +28,28 @@ def gerer_collisions(tiroirs):
             attaque.deja_touche = set()
 
         # 4. On applique les dégâts
+        # 4. On applique les dégâts
         for ennemi in ennemis_touches:
             if ennemi not in attaque.deja_touche:
                 
-                # --- CAS A : BOSS (avec sécurité timer) ---
+                # Vérifie le multiplicateur
+                multiplicateur = 2 if "argentx2.png" in joueur.inventaire_charmes else 1
+
+                # --- CAS A : BOSS ---
                 if hasattr(ennemi, "invul_timer"):
                     if ennemi.invul_timer <= 0:
-                        joueur.monnaie += 2
+                        joueur.monnaie += (2 * multiplicateur)
                         ennemi.pv -= 1
                         ennemi.invul_timer = 0.75
-                        # On ne l'ajoute pas à deja_touche pour permettre 
-                        # à une AUTRE attaque de le toucher après 0.75s
                 
-                # --- CAS B : MOBS NORMAUX ou P3 ---
+                # --- CAS B : MOBS NORMAUX ---
                 else:
                     if hasattr(ennemi, "pv"):
                         ennemi.pv -= 1
-                        joueur.monnaie += 1
+                        joueur.monnaie += (1 * multiplicateur)
                     elif hasattr(ennemi, "points_de_vie"):
                         ennemi.points_de_vie -= 1
-                        joueur.monnaie += 2
+                        joueur.monnaie += (2 * multiplicateur)
                     
                     # On marque comme touché par cette instance d'attaque
                     attaque.deja_touche.add(ennemi)
