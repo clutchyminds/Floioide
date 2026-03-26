@@ -418,10 +418,8 @@ class MonJeu(arcade.View):
         self.camera_sprites = arcade.camera.Camera2D()
         self.camera_gui = arcade.camera.Camera2D()
 
-        # 1.0 est la vue normale.   
-        # Si tu mets 0.5, tu vois 2x plus de choses (tu dézoomes).
-        # Si tu mets 2.0, tu zoomes de très près.
-        self.camera_sprites.zoom = 0.5
+        # Ton dézoom (0.5 = voir plus large)
+        self.camera_jeu.zoom = 0.7
 
         """ Configuration initiale du niveau et du spawn """
         # 1. Chargement de la Map Tiled
