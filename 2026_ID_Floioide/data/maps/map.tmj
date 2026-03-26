@@ -108,7 +108,7 @@
          "name":"tron",
          "opacity":1,
          "type":"tilelayer",
-         "visible":false,
+         "visible":true,
          "width":600,
          "x":0,
          "y":0
@@ -219,7 +219,7 @@
          "name":"test",
          "opacity":1,
          "type":"tilelayer",
-         "visible":false,
+         "visible":true,
          "width":600,
          "x":0,
          "y":0
@@ -330,7 +330,7 @@
          "name":"back-ground",
          "opacity":0.75,
          "type":"tilelayer",
-         "visible":false,
+         "visible":true,
          "width":600,
          "x":0,
          "y":0
@@ -441,7 +441,7 @@
          "name":"back-ground arbre etc",
          "opacity":0.63,
          "type":"tilelayer",
-         "visible":false,
+         "visible":true,
          "width":600,
          "x":0,
          "y":0
@@ -663,7 +663,7 @@
          "name":"front",
          "opacity":1,
          "type":"tilelayer",
-         "visible":false,
+         "visible":true,
          "width":600,
          "x":0,
          "y":0
@@ -774,7 +774,7 @@
          "name":"dvd",
          "opacity":1,
          "type":"tilelayer",
-         "visible":false,
+         "visible":true,
          "width":600,
          "x":0,
          "y":0
@@ -885,7 +885,7 @@
          "name":"fontaine",
          "opacity":1,
          "type":"tilelayer",
-         "visible":false,
+         "visible":true,
          "width":600,
          "x":0,
          "y":0
@@ -996,7 +996,7 @@
          "name":"ver de terre",
          "opacity":1,
          "type":"tilelayer",
-         "visible":false,
+         "visible":true,
          "width":600,
          "x":0,
          "y":0
@@ -1107,7 +1107,7 @@
          "name":"ENDING",
          "opacity":1,
          "type":"tilelayer",
-         "visible":false,
+         "visible":true,
          "width":600,
          "x":0,
          "y":0
@@ -1218,7 +1218,7 @@
          "name":"mobs",
          "opacity":1,
          "type":"tilelayer",
-         "visible":false,
+         "visible":true,
          "width":600,
          "x":0,
          "y":0
