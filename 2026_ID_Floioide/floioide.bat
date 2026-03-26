@@ -13,5 +13,5 @@ python.exe -m pip install --upgrade pip
 pip install -r requirements.txt
 
 :: On lance le jeu
-python main.py
+python sources/main.py
 pause

@@ -1,7 +1,7 @@
 import os
 import arcade
 import math
-from sources.constantes import LARGEUR, HAUTEUR, DOSSIER_DATA
+from constantes import LARGEUR, HAUTEUR, DOSSIER_DATA
 
 class HUD:
     def __init__(self):

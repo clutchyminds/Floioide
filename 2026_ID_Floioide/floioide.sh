@@ -9,4 +9,4 @@ if [ ! -d "$VENV_DIR" ]; then
 fi
 
 "$VENV_DIR/bin/pip" install -r "requirements.txt"
-"$VENV_DIR/bin/python" main.py
+"$VENV_DIR/bin/python" sources/main.py

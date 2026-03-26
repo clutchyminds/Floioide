@@ -3,7 +3,7 @@ import math
 import random 
 import os
 import arcade
-from sources.constantes import DOSSIER_DATA, DOSSIER_BOSS, GRAVITE, LARGEUR, HAUTEUR, TAILLE_TUILE, VITESSE_MARCHE, VITESSE_DASH, VITESSE_SAUT, VITESSE_TIR, DISTANCE_MAX_TIR
+from constantes import DOSSIER_DATA, DOSSIER_BOSS, GRAVITE, LARGEUR, HAUTEUR, TAILLE_TUILE, VITESSE_MARCHE, VITESSE_DASH, VITESSE_SAUT, VITESSE_TIR, DISTANCE_MAX_TIR, DOSSIER_DATA, TAILLE_TUILE, VITESSE_MOB, GRAVITE
 from arcade.hitbox import HitBox
 
 
@@ -795,3 +795,222 @@ class BossArbreP3(EntiteBossTron):
                 self.joueur.vie -= self.degats # Enlève 1 PV
                 self.joueur.invul_timer = 1.0
                 print(f"P3 vous a touché ! PV restants : {self.joueur.vie}")
+
+
+# --- PROJECTILE DES MOBS VOLANTS ---
+class BouleBleue(arcade.Sprite):
+    def __init__(self, x, y, dest_x, dest_y, degats, chemin_texture):
+        super().__init__(chemin_texture, scale=1.0)
+        self.center_x = x
+        self.center_y = y
+        self.degats = degats
+        self.timer_vie = 0.0
+        
+        # Calcul de la trajectoire
+        angle_rad = math.atan2(dest_y - y, dest_x - x)
+        vitesse_proj = 300 # "vas assez vite"
+        self.change_x = math.cos(angle_rad) * vitesse_proj
+        self.change_y = math.sin(angle_rad) * vitesse_proj
+
+    def update_proj(self, delta_time):
+        self.center_x += self.change_x * delta_time
+        self.center_y += self.change_y * delta_time
+        self.timer_vie += delta_time
+        if self.timer_vie >= 5.0: # Disparaît au bout de 5s
+            self.remove_from_sprite_lists()
+
+
+# --- CLASSE DE BASE POUR LES NOUVEAUX MOBS ---
+class NouveauMobBase(EntiteAnimee):
+    def __init__(self, x, y, joueur, stats, textures_paths):
+        super().__init__(x, y, scale=1.0)
+        self.joueur = joueur
+        self.pv = stats["pv"]
+        self.degats = stats["degats"]
+        self.drop_hit = stats["drop_hit"]
+        self.drop_death = stats["drop_death"]
+        self.invul_timer = 0.0 # Timer d'invincibilité de 1s
+        
+        # Chargement des textures d'animation
+        self.textures_anim = [arcade.load_texture(path) for path in textures_paths]
+        self.texture = self.textures_anim[0]
+        self.anim_timer = 0.0
+        
+    def gerer_invulnerabilite_et_animation(self, delta_time):
+        # Invulnérabilité
+        if self.invul_timer > 0:
+            self.invul_timer -= delta_time
+            self.alpha = 150 # Clignote si touché
+        else:
+            self.alpha = 255
+            
+        # Animation en boucle
+        self.anim_timer += delta_time
+        if self.anim_timer > 0.2: # Change d'image toutes les 0.2s
+            self.anim_timer = 0.0
+            self.frame_actuelle = (self.frame_actuelle + 1) % len(self.textures_anim)
+            self.texture = self.textures_anim[self.frame_actuelle]
+
+        # Orientation vers le joueur (Base = regarde vers la gauche)
+        if self.joueur.center_x > self.center_x:
+            self.scale = (-1.0, 1.0) # Retournement horizontal pour regarder à droite (Arcade 3.0)
+        else:
+            self.scale = (1.0, 1.0) # Regarde à gauche
+
+    def anti_stuck(self, murs):
+        # TP à la tuile libre la plus proche si coincé
+        if arcade.check_for_collision_with_list(self, murs):
+            origine_x, origine_y = self.center_x, self.center_y
+            # Recherche en spirale (rayon 1 à 3 tuiles)
+            for rayon in range(1, 4):
+                for dx, dy in [(0,1), (1,0), (0,-1), (-1,0), (1,1), (-1,-1), (1,-1), (-1,1)]:
+                    self.center_x = origine_x + dx * TAILLE_TUILE * rayon
+                    self.center_y = origine_y + dy * TAILLE_TUILE * rayon
+                    if not arcade.check_for_collision_with_list(self, murs):
+                        return # Emplacement libre trouvé !
+            # Si vraiment tout est bloqué, on le remet à sa place
+            self.center_x, self.center_y = origine_x, origine_y
+
+
+# --- MOB SOL ---
+class MobSol(NouveauMobBase):
+    def update_mob(self, delta_time, murs):
+        self.gerer_invulnerabilite_et_animation(delta_time)
+        
+        # Gravité
+        self.change_y -= GRAVITE
+        
+        # Déplacement vers le joueur
+        if self.joueur.center_x < self.center_x:
+            self.change_x = -VITESSE_MOB
+        else:
+            self.change_x = VITESSE_MOB
+
+        # Application physique et collisions (Simplifiée)
+        self.center_x += self.change_x
+        if arcade.check_for_collision_with_list(self, murs):
+            self.center_x -= self.change_x # Annule X
+            
+        self.center_y += self.change_y
+        hit_list_y = arcade.check_for_collision_with_list(self, murs)
+        if hit_list_y:
+            if self.change_y < 0: # Touche le sol
+                self.bottom = hit_list_y[0].top
+            elif self.change_y > 0: # Touche le plafond
+                self.top = hit_list_y[0].bottom
+            self.change_y = 0
+
+        self.anti_stuck(murs)
+
+
+# --- MOB AIR ---
+class MobAir(NouveauMobBase):
+    def __init__(self, x, y, joueur, stats, textures_paths, chemin_boule, liste_projectiles):
+        super().__init__(x, y, joueur, stats, textures_paths)
+        self.chemin_boule = chemin_boule
+        self.liste_projectiles = liste_projectiles
+        self.timer_tir = 0.0
+
+    def update_mob(self, delta_time, murs):
+        self.gerer_invulnerabilite_et_animation(delta_time)
+        
+        # Déplacement : Reste à 2 tuiles (128 pixels) du joueur
+        distance = math.dist((self.center_x, self.center_y), (self.joueur.center_x, self.joueur.center_y))
+        
+        if distance > TAILLE_TUILE * 2:
+            angle_rad = math.atan2(self.joueur.center_y - self.center_y, self.joueur.center_x - self.center_x)
+            self.change_x = math.cos(angle_rad) * VITESSE_MOB
+            self.change_y = math.sin(angle_rad) * VITESSE_MOB
+        else:
+            self.change_x = 0
+            self.change_y = 0
+
+        self.center_x += self.change_x
+        self.center_y += self.change_y
+        
+        self.anti_stuck(murs)
+
+        # Mécanique de tir (Toutes les 3 secondes)
+        self.timer_tir += delta_time
+        if self.timer_tir >= 3.0:
+            self.timer_tir = 0.0
+            boule = BouleBleue(self.center_x, self.center_y, self.joueur.center_x, self.joueur.center_y, self.degats, self.chemin_boule)
+            self.liste_projectiles.append(boule)
+            
+
+class BossVerDeTerre(EntiteBossTron):
+    def __init__(self, x, y, joueur):
+        # Taille multipliée par 4 comme demandé
+        super().__init__(scale=2.0) 
+        self.center_x = x
+        self.center_y = y
+        self.joueur = joueur
+        
+        self.pv = 25
+        self.pv_max = 25
+        self.degats = 30 
+        self.drop_hit = 1 
+        self.drop_death = 10 
+        self.temps_invul = 1.0 
+        
+        self.timer_phase = 0.0
+        self.phase_actuelle = 0
+        self.animations = []
+        
+        # Chargement des textures (On garde la logique de tes dossiers)
+        def charger_phase(dossier, prefix, delay, debut, fin, zfill_val):
+            frames = []
+            chemin_base = os.path.join(DOSSIER_DATA, "boss", "Ver de terre", dossier)
+            for i in range(debut, fin + 1):
+                num = str(i).zfill(zfill_val) 
+                nom_fichier = f"{prefix}{num}_delay-{delay}.png"
+                try:
+                    frames.append(arcade.load_texture(os.path.join(chemin_base, nom_fichier)))
+                except:
+                    pass
+            return frames if frames else [arcade.make_soft_square_texture(100, arcade.color.GREEN)]
+
+        self.animations.append(charger_phase("animé", "frame_", "0.13s", 0, 6, 1))
+        self.animations.append(charger_phase("plongeon", "frame_", "0.13s", 0, 13, 2))
+        self.animations.append(charger_phase("saut bougeant", "frame_", "0.1s", 0, 12, 2))
+        self.animations.append(charger_phase("saut court", "frame_", "0.1s", 0, 10, 2))
+        self.animations.append(charger_phase("Saut simple", "frame_", "0.1s", 0, 12, 2))
+        
+        self.texture = self.animations[0][0]
+
+    def appliquer_physique(self, murs):
+        # Toujours aucune gravité, il flotte là où il a spawn
+        pass
+
+    def update_boss(self, delta_time, liste_projectiles, murs):
+        # 1. Invulnérabilité
+        if self.invul_timer > 0:
+            self.invul_timer -= delta_time
+            self.alpha = 150
+        else:
+            self.alpha = 255
+            
+        # 2. Gestion du temps de phase (5 secondes par phase)
+        self.timer_phase += delta_time
+        if self.timer_phase >= 5.0:
+            self.timer_phase = 0.0
+            self.phase_actuelle = (self.phase_actuelle + 1) % 5
+            
+        # 3. Animation UNIQUE sur 5 secondes
+        # On calcule l'index de l'image pour que la liste entière soit jouée en exactement 5s
+        frames_actuelles = self.animations[self.phase_actuelle]
+        nb_frames = len(frames_actuelles)
+        
+        # Progression de 0.0 à 1.0 sur les 5 secondes
+        progression = self.timer_phase / 5.0
+        # On choisit l'image correspondante
+        index_image = min(int(progression * nb_frames), nb_frames - 1)
+        self.texture = frames_actuelles[index_image]
+            
+        # 4. Collision dégâts
+        if arcade.check_for_collision(self, self.joueur):
+            if self.joueur.invul_timer <= 0:
+                self.joueur.vie -= self.degats
+                self.joueur.invul_timer = 1.0
+                direction = 1 if self.joueur.center_x > self.center_x else -1
+                self.joueur.center_x += direction * 50

@@ -2,11 +2,11 @@
 import arcade
 import random
 import os
-from sources.constantes import *
-from sources.inputs import InputHandler
-from sources.logic import gerer_collisions
-from sources.entities import Joueur, Boss, MobDesertSol, MobForetSol, MobVilleSol, PNJ, EffetAttaque, BossArbreP1, BossArbreP2, BossArbreP3
-from sources.interface import HUD, Chat, InterfaceShop, InterfaceDev
+from constantes import *
+from inputs import InputHandler
+from logic import gerer_collisions
+from entities import Joueur, MobAir, MobSol, MobDesertSol, MobForetSol, MobVilleSol, PNJ, EffetAttaque, BossArbreP1, BossArbreP2, BossArbreP3, BossVerDeTerre
+from interface import HUD, Chat, InterfaceShop, InterfaceDev
 import math
 from arcade.hitbox import HitBox
 
@@ -323,6 +323,8 @@ class MonJeu(arcade.View):
 
         self.scene = None
         
+        self.timer_spawn_mobs = 0.0
+
         self.etat_boss_tron = 0
 
         
@@ -341,6 +343,10 @@ class MonJeu(arcade.View):
         self.timer_general = 0 # Pour faire tourner les charmes
         # Dans le setup(), ajoute :
         self.tiroirs["projectiles_joueur"] = arcade.SpriteList()
+
+        self.ennemis = arcade.SpriteList()
+        self.projectiles_ennemis = arcade.SpriteList()
+        self.tiroirs["ennemis"] = self.ennemis
 
         # 1. Organisation des listes d'objets (SpriteLists)
         self.tiroirs = {
@@ -407,7 +413,16 @@ class MonJeu(arcade.View):
 
         self.window.ctx.default_filter = (arcade.gl.NEAREST, arcade.gl.NEAREST)
 
-    def setup(self):
+    def setup(self):    
+
+        self.camera_sprites = arcade.camera.Camera2D()
+        self.camera_gui = arcade.camera.Camera2D()
+
+        # 1.0 est la vue normale.   
+        # Si tu mets 0.5, tu vois 2x plus de choses (tu dézoomes).
+        # Si tu mets 2.0, tu zoomes de très près.
+        self.camera_sprites.zoom = 0.5
+
         """ Configuration initiale du niveau et du spawn """
         # 1. Chargement de la Map Tiled
         map_path = os.path.join(DOSSIER_MAPS, "map.tmj")
@@ -431,10 +446,13 @@ class MonJeu(arcade.View):
             else:
                 self.tiroirs[nom_tiroir] = arcade.SpriteList()
 
+        
         # On remplit les tiroirs (Surtout les murs pour la physique !)
         charger_calque("hit-box", "murs")
         charger_calque("fontaine", "fontaines")
         charger_calque("tron", "tron")
+        charger_calque("ver de terre", "trigger_ver")
+        self.boss_ver_spawne = False # Pour empêcher de le spawn 2 fois
         charger_calque("boss-test", "declencheurs")
         charger_calque("front", "front")
         charger_calque("back-ground", "background")
@@ -982,6 +1000,23 @@ class MonJeu(arcade.View):
                 tir.remove_from_sprite_lists()
 
                 self.fleur.dernier_coup_timer += delta_time
+
+        
+        # =========================================================
+        # --- LOGIQUE DU BOSS VER DE TERRE ---
+        # =========================================================
+
+        if "trigger_ver" in self.tiroirs and not self.boss_ver_spawne:
+            if arcade.check_for_collision_with_list(self.fleur, self.tiroirs["trigger_ver"]):
+                self.boss_ver_spawne = True
+                # Spawn à 24492 en X et 1850 en Y (plus haut qu'avant)
+                boss_ver = BossVerDeTerre(24492, 1970, self.fleur) 
+                
+                if "boss" not in self.tiroirs:
+                    self.tiroirs["boss"] = arcade.SpriteList()
+                self.tiroirs["boss"].append(boss_ver)
+                self.chat.ajouter_message("UN VER GÉANT SORT DE TERRE !", arcade.color.GOLD)
+
         # =========================================================
         # --- LOGIQUE DU BOSS TRON ---
         # =========================================================
@@ -1081,6 +1116,75 @@ class MonJeu(arcade.View):
                         pour_supprimer = True
                 if pour_supprimer:
                     proj.remove_from_sprite_lists()
+
+        # 1. MISE A JOUR DES PROJECTILES ENNEMIS (Boules bleues)
+        for proj in self.projectiles_ennemis:
+            proj.update_proj(delta_time)
+            # Collision avec le joueur (dégâts de la boule)
+            if arcade.check_for_collision(proj, self.fleur):
+                self.fleur.vie -= proj.degats
+                proj.remove_from_sprite_lists()
+
+        # 2. MISE A JOUR DES NOUVEAUX MOBS
+        murs = self.scene["hit-box"] # Assure-toi que c'est bien le nom de ton calque
+        for mob in self.ennemis:
+            if hasattr(mob, "update_mob"):
+                mob.update_mob(delta_time, murs)
+                # Collision physique (Dégâts au contact du joueur pour les mobs sol uniquement)
+                if isinstance(mob, MobSol) and arcade.check_for_collision(mob, self.fleur):
+                    # Attention, il te faudra peut-être un invul_timer sur le joueur pour ne pas le one-shot
+                    self.fleur.vie -= mob.degats
+
+        
+        # --- GESTION DU TIMER DE SPAWN ---
+        if self.timer_spawn_mobs > 0:
+            self.timer_spawn_mobs -= delta_time
+
+        # --- SYSTÈME DE SPAWN VIA LE CALQUE "mobs" ---
+        if "mobs" in self.scene and self.timer_spawn_mobs <= 0:
+            touches_spawn = arcade.check_for_collision_with_list(self.fleur, self.scene["mobs"])
+            
+            if touches_spawn:
+                px = self.fleur.center_x
+                spawn_possible = True
+                
+                # Définition des zones (Foret, Desert, Ville)
+                if 0 <= px <= 16960:
+                    stats_sol = {"pv": 2, "degats": 2.0, "drop_hit": 1, "drop_death": 2}
+                    tex_sol = [os.path.join(DOSSIER_DATA, "mobs", "foret", "sol", f"spi{i}.png") for i in range(2)]
+                    stats_air = {"pv": 2, "degats": 0.5, "drop_hit": 1, "drop_death": 2}
+                    tex_air = [os.path.join(DOSSIER_DATA, "mobs", "foret", "air", f"libu{i}.png") for i in range(4)]
+                    chemin_boule = os.path.join(DOSSIER_DATA, "mobs", "foret", "air", "boule_bleue.png")
+                
+                elif 16961 <= px <= 27136:
+                    stats_sol = {"pv": 3, "degats": 2.5, "drop_hit": 2, "drop_death": 4}
+                    tex_sol = [os.path.join(DOSSIER_DATA, "mobs", "desert", "sol", f"sable{i}.png") for i in range(2)]
+                    stats_air = {"pv": 3, "degats": 1.0, "drop_hit": 2, "drop_death": 3}
+                    tex_air = [os.path.join(DOSSIER_DATA, "mobs", "desert", "air", f"puce{i}.png") for i in range(2)]
+                    chemin_boule = os.path.join(DOSSIER_DATA, "mobs", "desert", "air", "boule_bleue.png")
+                    
+                elif 27137 <= px <= 38320:
+                    stats_sol = {"pv": 4, "degats": 3.0, "drop_hit": 4, "drop_death": 6}
+                    tex_sol = [os.path.join(DOSSIER_DATA, "mobs", "ville", "sol", f"mob_sol.{i}.png") for i in range(1, 6)]
+                    stats_air = {"pv": 4, "degats": 1.0, "drop_hit": 4, "drop_death": 3}
+                    tex_air = [os.path.join(DOSSIER_DATA, "mobs", "ville", "air", f"drone{i}.png") for i in range(2)]
+                    chemin_boule = os.path.join(DOSSIER_DATA, "mobs", "ville", "air", "boule_bleue.png")
+                else:
+                    spawn_possible = False
+
+                if spawn_possible:
+                    # On lance le cooldown de 30 secondes
+                    self.timer_spawn_mobs = 30.0
+                    
+                    for _ in range(3):
+                        # Spawn Sol
+                        rx = px + random.randint(-640, 640)
+                        ry = self.fleur.center_y + 100
+                        self.ennemis.append(MobSol(rx, ry, self.fleur, stats_sol, tex_sol))
+                        # Spawn Air
+                        rax = px + random.randint(-640, 640)
+                        ray = self.fleur.center_y + 300
+                        self.ennemis.append(MobAir(rax, ray, self.fleur, stats_air, tex_air, chemin_boule, self.projectiles_ennemis))
                      
     def on_draw(self):
         # 1. On nettoie l'écran
@@ -1101,6 +1205,9 @@ class MonJeu(arcade.View):
 
         if "ennemis" in self.tiroirs: self.tiroirs["ennemis"].draw()
         
+        if "boss" in self.tiroirs:
+            self.tiroirs["boss"].draw()
+
         if "boss" in self.tiroirs:
             self.tiroirs["boss"].draw()
             for b in self.tiroirs["boss"]:
