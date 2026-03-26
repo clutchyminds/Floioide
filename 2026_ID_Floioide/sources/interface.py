@@ -297,7 +297,7 @@ class InterfaceDev:
                 if changement != 0:
                     # Cas spécial pour la TAILLE (Scale) car c'est un tuple dans Arcade 3.0
                     if ligne["attr"] == "scale":
-                        ancienne_taille = joueur.scale # On prend la largeur actuelle
+                        ancienne_taille = joueur.scale[0] # On prend la largeur actuelle
                         nouvelle_taille = max(0.1, ancienne_taille + changement)
                         joueur.scale = (nouvelle_taille, nouvelle_taille)
                     else:

@@ -3,7 +3,7 @@ import math
 import random 
 import os
 import arcade
-from constantes import DOSSIER_BOSS, LARGEUR, HAUTEUR, VITESSE_MARCHE, VITESSE_DASH, VITESSE_SAUT, VITESSE_TIR, DISTANCE_MAX_TIR, DOSSIER_DATA, TAILLE_TUILE, VITESSE_MOB, GRAVITE
+from constantes import DOSSIER_DATA, DOSSIER_BOSS, GRAVITE, LARGEUR, HAUTEUR, TAILLE_TUILE, VITESSE_MARCHE, VITESSE_DASH, VITESSE_SAUT, VITESSE_TIR, DISTANCE_MAX_TIR, DOSSIER_DATA, TAILLE_TUILE, VITESSE_MOB, GRAVITE
 from arcade.hitbox import HitBox
 
 
@@ -108,7 +108,7 @@ class Joueur(EntiteAnimee):
         self.noclip = False
 
         # 3. hitbox fixe obligatoire pour arcade 3.0
-        self.hit_box_algorithm = None
+        self.hit_box_algorithm = "None"
         t = 45 
         self.hit_box_perso = HitBox([(-t, -t), (t, -t), (t, t), (-t, t)])
         self.hit_box = self.hit_box_perso
@@ -195,16 +195,6 @@ class Joueur(EntiteAnimee):
 
         # Sécurité Hitbox
         self.hit_box = self.hit_box_perso
-
-        # Diminuer le timer d'invulnérabilité
-        if hasattr(self, "invul_timer") and self.invul_timer > 0:
-            self.invul_timer -= delta_time
-            
-            # Effet visuel : Clignotement (optionnel mais recommandé)
-            # On fait varier l'opacité (alpha) entre 255 (opaque) et 100 (transparent)
-            self.alpha = 150 if int(self.invul_timer * 10) % 2 == 0 else 255
-        else:
-            self.alpha = 255 # Redevient normal après l'invulnérabilité
 
 class Boss(EntiteAnimee):
     def __init__(self, x, y):
@@ -341,12 +331,22 @@ class Ennemi(EntiteAnimee):
             base = self.textures_marche[self.frame_actuelle]
             # miroir selon la direction
             if self.direction == -1:
-                # On applique la texture normale
-                self.texture = base
-                # On utilise la propriété de l'entité (Sprite) pour l'effet miroir
-                self.flip_left_right = self.face_gauche
+                self.texture = base.flip_left_right()
             else:
                 self.texture = base
+
+# on cree des alias pour que main.py ne crashe pas avec les anciens noms
+class MobForetSol(Ennemi):
+    def __init__(self, x, y):
+        super().__init__(x, y, os.path.join("foret", "sol"), nb_anim=4)
+
+class MobDesertSol(Ennemi):
+    def __init__(self, x, y):
+        super().__init__(x, y, os.path.join("desert", "sol"), nb_anim=4)
+
+class MobVilleSol(Ennemi):
+    def __init__(self, x, y):
+        super().__init__(x, y, os.path.join("ville", "sol"), nb_anim=4)
 
 
 class PNJ(arcade.Sprite):
@@ -823,53 +823,39 @@ class BouleBleue(arcade.Sprite):
 # --- CLASSE DE BASE POUR LES NOUVEAUX MOBS ---
 class NouveauMobBase(EntiteAnimee):
     def __init__(self, x, y, joueur, stats, textures_paths):
-        # TAILLE STANDARD DE 0.5 POUR TOUS LES MOBS
-        super().__init__(x, y, scale=0.5) 
+        super().__init__(x, y, scale=1.0)
         self.joueur = joueur
         self.pv = stats["pv"]
         self.degats = stats["degats"]
         self.drop_hit = stats["drop_hit"]
         self.drop_death = stats["drop_death"]
-        self.invul_timer = 0.0 
+        self.invul_timer = 0.0 # Timer d'invincibilité de 1s
         
-        self.pv_max = stats.get("pv", 2) 
-        self.pv = self.pv_max
-
-        # --- NOUVEAU : Mécanique touche_joueur ---
-        self.touche_joueur = 0
-        self.timer_touche_joueur = 0.0
-
         # Chargement des textures d'animation
         self.textures_anim = [arcade.load_texture(path) for path in textures_paths]
         self.texture = self.textures_anim[0]
         self.anim_timer = 0.0
         
     def gerer_invulnerabilite_et_animation(self, delta_time):
-        # Invulnérabilité (clignotement du mob)
+        # Invulnérabilité
         if self.invul_timer > 0:
             self.invul_timer -= delta_time
-            self.alpha = 150 
+            self.alpha = 150 # Clignote si touché
         else:
             self.alpha = 255
             
-        # --- NOUVEAU : Timer pour pouvoir retoucher le joueur ---
-        if self.timer_touche_joueur > 0:
-            self.timer_touche_joueur -= delta_time
-            if self.timer_touche_joueur <= 0:
-                self.touche_joueur = 0 # Le mob peut à nouveau attaquer
-                
         # Animation en boucle
         self.anim_timer += delta_time
-        if self.anim_timer > 0.2: 
+        if self.anim_timer > 0.2: # Change d'image toutes les 0.2s
             self.anim_timer = 0.0
             self.frame_actuelle = (self.frame_actuelle + 1) % len(self.textures_anim)
             self.texture = self.textures_anim[self.frame_actuelle]
 
-        # Orientation vers le joueur (Arcade 3.0 utilise des tuples pour le miroir)
+        # Orientation vers le joueur (Base = regarde vers la gauche)
         if self.joueur.center_x > self.center_x:
-            self.scale = (-0.5, 0.5) # Retournement horizontal en gardant la taille 0.5
+            self.scale = (-1.0, 1.0) # Retournement horizontal pour regarder à droite (Arcade 3.0)
         else:
-            self.scale = (0.5, 0.5) # Regarde à gauche avec taille 0.5
+            self.scale = (1.0, 1.0) # Regarde à gauche
 
     def anti_stuck(self, murs):
         # TP à la tuile libre la plus proche si coincé
@@ -888,49 +874,42 @@ class NouveauMobBase(EntiteAnimee):
 
 # --- MOB SOL ---
 class MobSol(NouveauMobBase):
-    def __init__(self, x, y, joueur, stats, textures_paths):
-        super().__init__(x, y, joueur, stats, textures_paths)
-        # SUPPRESSION de self.scale = 0.3 (géré par NouveauMobBase)
-        self.pv = stats.get("pv", 2)
-        self.degats = stats.get("degats", 1.0)
-
     def update_mob(self, delta_time, murs):
         self.gerer_invulnerabilite_et_animation(delta_time)
+        
+        # Gravité
         self.change_y -= GRAVITE
         
-        # 3. IA : Se diriger vers le joueur
+        # Déplacement vers le joueur
         if self.joueur.center_x < self.center_x:
             self.change_x = -VITESSE_MOB
         else:
             self.change_x = VITESSE_MOB
 
+        # Application physique et collisions (Simplifiée)
         self.center_x += self.change_x
         if arcade.check_for_collision_with_list(self, murs):
-            self.center_x -= self.change_x
+            self.center_x -= self.change_x # Annule X
             
         self.center_y += self.change_y
         hit_list_y = arcade.check_for_collision_with_list(self, murs)
         if hit_list_y:
-            if self.change_y < 0: # Tombe
+            if self.change_y < 0: # Touche le sol
                 self.bottom = hit_list_y[0].top
-            elif self.change_y > 0: # Touche plafond
+            elif self.change_y > 0: # Touche le plafond
                 self.top = hit_list_y[0].bottom
             self.change_y = 0
 
         self.anti_stuck(murs)
 
+
 # --- MOB AIR ---
 class MobAir(NouveauMobBase):
-    def __init__(self, x, y, joueur, stats, textures_paths, projectile_texture, liste_projectiles):
+    def __init__(self, x, y, joueur, stats, textures_paths, chemin_boule, liste_projectiles):
         super().__init__(x, y, joueur, stats, textures_paths)
-        # SUPPRESSION des self.scale et self.vie parasites
-        
-        self.chemin_boule = arcade.load_texture(os.path.join(DOSSIER_DATA, "mobs", "air", "boule.png"))
+        self.chemin_boule = chemin_boule
         self.liste_projectiles = liste_projectiles
-        
-        self.pv = stats.get("pv", 2)
-        self.degats = stats.get("degats", 0.5)
-        self.timer_tir = 0
+        self.timer_tir = 0.0
 
     def update_mob(self, delta_time, murs):
         self.gerer_invulnerabilite_et_animation(delta_time)
@@ -967,9 +946,6 @@ class BossVerDeTerre(EntiteBossTron):
         self.center_y = y
         self.joueur = joueur
         
-        self.vie = 3
-        self.vie_max = 3
-
         self.pv = 25
         self.pv_max = 25
         self.degats = 30 
@@ -1038,23 +1014,3 @@ class BossVerDeTerre(EntiteBossTron):
                 self.joueur.invul_timer = 1.0
                 direction = 1 if self.joueur.center_x > self.center_x else -1
                 self.joueur.center_x += direction * 50
-
-    def update_animation(self, delta_time=1/60):
-        super().update_animation(delta_time)
-        if not self.textures_marche:
-            return
-            
-        if self.temps_ecoule > self.vitesse_animation:
-            self.temps_ecoule = 0
-            self.frame_actuelle = (self.frame_actuelle + 1) % len(self.textures_marche)
-            
-            base = self.textures_marche[self.frame_actuelle]
-            
-            # --- CORRECTION ORIENTATION ---
-            # Si de base ils sont vers la GAUCHE :
-            if self.direction == -1:
-                # Le joueur est à gauche, on garde la texture normale
-                self.texture = base 
-            else:
-                # Le joueur est à droite, on inverse la texture
-                self.texture = base.flip_left_right()

@@ -4,8 +4,8 @@ import random
 import os
 from constantes import *
 from inputs import InputHandler
-from logic import gerer_collisions, separer_mobs
-from entities import Joueur, MobAir, MobSol, PNJ, EffetAttaque, BossArbreP1, BossArbreP2, BossArbreP3, BossVerDeTerre
+from logic import gerer_collisions
+from entities import Joueur, MobAir, MobSol, MobDesertSol, MobForetSol, MobVilleSol, PNJ, EffetAttaque, BossArbreP1, BossArbreP2, BossArbreP3, BossVerDeTerre
 from interface import HUD, Chat, InterfaceShop, InterfaceDev
 import math
 from arcade.hitbox import HitBox
@@ -17,7 +17,7 @@ class ProjectileJoueur(arcade.Sprite):
         try: 
             tex = arcade.load_texture(chemin)
         except: 
-            tex = arcade.Texture.create_filled("balle_secours", (10, 10), arcade.color.YELLOW)
+            tex = arcade.make_soft_square_texture(10, arcade.color.YELLOW)
         
         super().__init__(tex, scale=0.8)
         self.center_x, self.center_y = x, y
@@ -320,9 +320,9 @@ class CinematiqueView(arcade.View):
 class MonJeu(arcade.View):
     def __init__(self, mode_dev=False):
         super().__init__()
-        
-        self.invul_timer = 0.0
 
+        self.scene = None
+        
         self.timer_spawn_mobs = 0.0
 
         self.etat_boss_tron = 0
@@ -334,18 +334,23 @@ class MonJeu(arcade.View):
 
         self.camera_sprites = arcade.camera.Camera2D()
         self.camera_gui = arcade.camera.Camera2D()
-        self.camera_bg = arcade.camera.Camera2D()
 
+        self.tiroirs = {}
         self.lecteur_musique = None
 
         self.mouse_world_x = 0
         self.mouse_world_y = 0
         self.timer_general = 0 # Pour faire tourner les charmes
-       
+        # Dans le setup(), ajoute :
+        self.tiroirs["projectiles_joueur"] = arcade.SpriteList()
+
+        self.ennemis = arcade.SpriteList()
+        self.projectiles_ennemis = arcade.SpriteList()
+        self.tiroirs["ennemis"] = self.ennemis
 
         # 1. Organisation des listes d'objets (SpriteLists)
         self.tiroirs = {
-            "murs": arcade.SpriteList(),
+            "murs": arcade.SpriteList(),      # Sera ton "hit-box"
             "front": arcade.SpriteList(),
             "background": arcade.SpriteList(),
             "boss_test": arcade.SpriteList(),
@@ -353,18 +358,11 @@ class MonJeu(arcade.View):
             "tirs": arcade.SpriteList(),
             "joueur": arcade.SpriteList(),
             "pnjs": arcade.SpriteList(),
-            "boss": arcade.SpriteList(),
-            "projectiles_ennemis": arcade.SpriteList(),
-            "projectiles_joueur": arcade.SpriteList(),
-            "attaques": arcade.SpriteList()
+            "boss": arcade.SpriteList(),             
+            "projectiles_ennemis": arcade.SpriteList(), 
+            "projectiles_joueur": arcade.SpriteList()
         }
         
-        self.tiroirs["projectiles_joueur"] = arcade.SpriteList()
-
-        self.ennemis = arcade.SpriteList()
-        self.projectiles_ennemis = arcade.SpriteList()
-        self.tiroirs["ennemis"] = self.ennemis
-
         # variables pour gerer le systeme de boss
         self.boss_actif = False
         self.liste_boss = arcade.SpriteList()
@@ -433,7 +431,6 @@ class MonJeu(arcade.View):
         
         # Crée la scène unique
         self.scene = arcade.Scene.from_tilemap(self.tile_map)
-        
 
         # 2. Création du Joueur (DOIT ÊTRE FAIT AVANT LE RESTE)
         self.fleur = Joueur(2026, 1800)
@@ -468,27 +465,6 @@ class MonJeu(arcade.View):
             (2765, 2797), (5893, 877), (12373, 2989), 
             (15154, 3949), (18868, 2989), (29084, 2733)
         ]
-
-        # Si le calque 'murs' n'existe pas, on en crée un vide pour éviter le crash
-        if "murs" not in self.scene:
-            self.scene.add_sprite_list("murs")
-
-        # --- CONFIGURATION DES CAMÉRAS PARALLAX ---
-        self.camera_bg0 = arcade.camera.Camera2D()
-        self.camera_bg1 = arcade.camera.Camera2D()
-        
-        # On récupère les calques et on les retire de la scène principale pour gérer leur propre caméra
-        try:
-            self.bg_parallax_0 = self.scene.get_sprite_list("font-bouge_0")
-            self.scene.remove_sprite_list_by_name("font-bouge_0")
-        except:
-            self.bg_parallax_0 = arcade.SpriteList()
-
-        try:
-            self.bg_parallax_1 = self.scene.get_sprite_list("font-bouge_1")
-            self.scene.remove_sprite_list_by_name("font-bouge_1")
-        except:
-            self.bg_parallax_1 = arcade.SpriteList()
 
         for x, y in coords_pnj:
             # On passe x, y et le joueur (fleur) car la classe PNJ en a besoin pour te regarder
@@ -747,7 +723,7 @@ class MonJeu(arcade.View):
                                 break
                         
                         if not trouve: # Si pas trouvé dans le stack, on cherche une case vide
-                            for i in range(1):
+                            for i in range(3):
                                 if self.fleur.inventaire_items[i] is None:
                                     self.fleur.inventaire_items[i] = {
                                         "nom": res["nom"], "fichier": res["fichier"], 
@@ -802,41 +778,9 @@ class MonJeu(arcade.View):
         if delta_time > 0:
             self.fps = 1 / delta_time
 
-        # --- 2. CENTRAGE CAMÉRA ---
-        # On calcule où la caméra devrait être pour que le joueur soit au milieu
-        target_x = self.fleur.center_x - LARGEUR / 2
-        target_y = self.fleur.center_y - HAUTEUR / 2
-        
-        # On récupère la taille de la map pour ne pas voir "le vide" hors de la carte
-        map_width = self.tile_map.width * self.tile_map.tile_width
-        map_height = self.tile_map.height * self.tile_map.tile_height
-        
-        # On bloque la caméra aux bords de la map
-        target_x = max(0, min(target_x, map_width - LARGEUR))
-        target_y = max(0, min(target_y, map_height - HAUTEUR))
-        
-        # On applique la position à la caméra de jeu
-        self.camera_sprites.position = (target_x, target_y)
-        
-        # --- MISE À JOUR DES CAMÉRAS PARALLAX (AXE X UNIQUEMENT) ---
-        # Plus le chiffre est proche de 1.0, plus le fond bouge VITE (presque comme le joueur)
-        # Plus il est proche de 0, plus il est lent (très loin)
-        # --- MISE À JOUR DES CAMÉRAS PARALLAX ---
-        vitesse_fond_proche = 0.85  # font-bouge_0
-        vitesse_fond_loin = 0.60    # font-bouge_1
-
-        # On change le X pour la vitesse, mais on force le Y à suivre la caméra du jeu !
-        self.camera_bg0.position = (self.camera_jeu.position.x * vitesse_fond_proche, self.camera_jeu.position.y)
-        self.camera_bg1.position = (self.camera_jeu.position.x * vitesse_fond_loin, self.camera_jeu.position.y)
-
-        # On utilise le calque "murs" pour éviter qu'ils ne soient poussés dans les murs
-        murs = self.scene.get_sprite_list("murs")
-        do_separation = False  # Changé le nom pour éviter le conflit
-        if "murs" in self.scene:
-            murs = self.scene["murs"]
-            do_separation = True
-
-        
+        # 2. GESTION DU DASH (Timers et États)
+        if self.fleur.timer_dash > 0:
+            self.fleur.timer_dash -= delta_time
 
         # --- RÉGÉNÉRATION FONTAINE ---
         # --- LOGIQUE DES FONTAINES (À mettre dans on_update) ---
@@ -1004,6 +948,17 @@ class MonJeu(arcade.View):
         px = self.fleur.center_x
         py = self.fleur.center_y
 
+        # Spawn Sol (toutes les 15s par exemple)
+        if self.timer_spawn_sol > 15.0 and mobs_sol < 5:
+            offset_x = random.choice([-500, 500])
+            if 0 <= px <= 8600:
+                self.tiroirs["ennemis"].append(MobForetSol(px + offset_x, py + 50))
+            elif 8600 < px <= 14000:
+                self.tiroirs["ennemis"].append(MobDesertSol(px + offset_x, py + 50))
+            else:
+                self.tiroirs["ennemis"].append(MobVilleSol(px + offset_x, py + 50))
+            self.timer_spawn_sol = 0
+
         
         # Dessiner les barres de vie au-dessus de chaque mob
         for ennemi in self.tiroirs["ennemis"]:
@@ -1160,19 +1115,6 @@ class MonJeu(arcade.View):
                 if pour_supprimer:
                     proj.remove_from_sprite_lists()
 
-        # 1. Orientation des ennemis vers le joueur
-        for ennemi in self.tiroirs["ennemis"]:
-            if hasattr(ennemi, "orienter_vers_joueur"):
-                ennemi.orienter_vers_joueur(self.fleur)
-            
-            # Si c'est un MobSol, on appelle sa logique de déplacement
-            if hasattr(ennemi, "logique_sol"):
-                ennemi.logique_sol(self.tiroirs["murs"])
-        
-        # 2. Gestion de la séparation (Anti-stacking)
-        from logic import gerer_separation_mobs
-        gerer_separation_mobs(self.tiroirs["ennemis"], self.tiroirs["murs"])
-
         # 1. MISE A JOUR DES PROJECTILES ENNEMIS (Boules bleues)
         for proj in self.projectiles_ennemis:
             proj.update_proj(delta_time)
@@ -1192,129 +1134,63 @@ class MonJeu(arcade.View):
                     self.fleur.vie -= mob.degats
 
         
-        
-        # --- A. GESTION DES TIMERS ---
+        # --- GESTION DU TIMER DE SPAWN ---
         if self.timer_spawn_mobs > 0:
             self.timer_spawn_mobs -= delta_time
-            
-        if self.fleur.invul_timer > 0:
-            self.fleur.invul_timer -= delta_time
-            self.fleur.alpha = 150 # Effet visuel quand on est touché
-        else:
-            self.fleur.alpha = 255
 
-        # --- B. MISE À JOUR DES MOBS ET COLLISIONS DÉGÂTS ---
-        murs = self.scene.get_sprite_list("hit-box") if "hit-box" in self.scene else None
-        
-        for mob in self.ennemis:
-            if hasattr(mob, "update_mob"):
-                mob.update_mob(delta_time, murs)
-            
-            # UNIQUE GESTION DES DÉGÂTS SUR LE JOUEUR (Mécanique touche_joueur)
-            if arcade.check_for_collision(mob, self.fleur):
-                # On vérifie l'attribut du mob, pas celui du joueur
-                if getattr(mob, "touche_joueur", 0) == 0:
-                    self.fleur.vie -= 10  # PERD 1 CŒUR EXACTEMENT (10 PV)
-                    mob.touche_joueur = 1 # Le mob a touché
-                    mob.timer_touche_joueur = 1.0 # Le mob attend 1s avant de pouvoir re-toucher
-                    
-                    # Petit recul quand le joueur se fait toucher
-                    direction = 1 if self.fleur.center_x > mob.center_x else -1
-                    self.fleur.center_x += direction * 50
-
-        # --- C. MISE À JOUR DES PROJECTILES (BOULES BLEUES) ---
-        for proj in self.projectiles_ennemis:
-            proj.update_proj(delta_time)
-            # Si la boule touche le joueur
-            if arcade.check_for_collision(proj, self.fleur):
-                if self.fleur.invul_timer <= 0:
-                    self.fleur.vie -= 10 # PERD 1 CŒUR EXACTEMENT
-                    self.fleur.invul_timer = 1.0 # 1 SECONDE DE SÉCURITÉ
-                proj.remove_from_sprite_lists()
-
-        # --- D. SYSTÈME DE SPAWN (LOGIQUE DE ZONE) ---
+        # --- SYSTÈME DE SPAWN VIA LE CALQUE "mobs" ---
         if "mobs" in self.scene and self.timer_spawn_mobs <= 0:
             touches_spawn = arcade.check_for_collision_with_list(self.fleur, self.scene["mobs"])
             
             if touches_spawn:
                 px = self.fleur.center_x
-                py = self.fleur.center_y
                 spawn_possible = True
                 
-                # --- CHOIX DES DONNÉES SELON L'AXE X (TOUS À 2 PV) ---
-                if 0 <= px <= 16960: # FORET
-                    s_sol = {"pv": 2, "degats": 10, "drop_hit": 1, "drop_death": 2}
-                    t_sol = [os.path.join(DOSSIER_DATA, "mobs", "foret", "sol", f"spi{i}.png") for i in range(2)]
-                    s_air = {"pv": 2, "degats": 10, "drop_hit": 1, "drop_death": 2}
-                    t_air = [os.path.join(DOSSIER_DATA, "mobs", "foret", "air", f"libu{i}.png") for i in range(4)]
-                    c_boule = os.path.join(DOSSIER_DATA, "mobs", "foret", "air", "boule_bleue.png")
+                # Définition des zones (Foret, Desert, Ville)
+                if 0 <= px <= 16960:
+                    stats_sol = {"pv": 2, "degats": 2.0, "drop_hit": 1, "drop_death": 2}
+                    tex_sol = [os.path.join(DOSSIER_DATA, "mobs", "foret", "sol", f"spi{i}.png") for i in range(2)]
+                    stats_air = {"pv": 2, "degats": 0.5, "drop_hit": 1, "drop_death": 2}
+                    tex_air = [os.path.join(DOSSIER_DATA, "mobs", "foret", "air", f"libu{i}.png") for i in range(4)]
+                    chemin_boule = os.path.join(DOSSIER_DATA, "mobs", "foret", "air", "boule_bleue.png")
                 
-                elif 16961 <= px <= 27136: # DESERT
-                    s_sol = {"pv": 2, "degats": 10, "drop_hit": 2, "drop_death": 4}
-                    t_sol = [os.path.join(DOSSIER_DATA, "mobs", "desert", "sol", f"sable{i}.png") for i in range(2)]
-                    s_air = {"pv": 2, "degats": 10, "drop_hit": 2, "drop_death": 3}
-                    t_air = [os.path.join(DOSSIER_DATA, "mobs", "desert", "air", f"puce{i}.png") for i in range(2)]
-                    c_boule = os.path.join(DOSSIER_DATA, "mobs", "desert", "air", "boule_bleue.png")
+                elif 16961 <= px <= 27136:
+                    stats_sol = {"pv": 3, "degats": 2.5, "drop_hit": 2, "drop_death": 4}
+                    tex_sol = [os.path.join(DOSSIER_DATA, "mobs", "desert", "sol", f"sable{i}.png") for i in range(2)]
+                    stats_air = {"pv": 3, "degats": 1.0, "drop_hit": 2, "drop_death": 3}
+                    tex_air = [os.path.join(DOSSIER_DATA, "mobs", "desert", "air", f"puce{i}.png") for i in range(2)]
+                    chemin_boule = os.path.join(DOSSIER_DATA, "mobs", "desert", "air", "boule_bleue.png")
                     
-                elif 27137 <= px <= 38320: # VILLE
-                    s_sol = {"pv": 2, "degats": 10, "drop_hit": 4, "drop_death": 6}
-                    t_sol = [os.path.join(DOSSIER_DATA, "mobs", "ville", "sol", f"mob_sol.{i}.png") for i in range(1, 6)]
-                    s_air = {"pv": 2, "degats": 10, "drop_hit": 4, "drop_death": 3}
-                    t_air = [os.path.join(DOSSIER_DATA, "mobs", "ville", "air", f"drone{i}.png") for i in range(2)]
-                    c_boule = os.path.join(DOSSIER_DATA, "mobs", "ville", "air", "boule_bleue.png")
+                elif 27137 <= px <= 38320:
+                    stats_sol = {"pv": 4, "degats": 3.0, "drop_hit": 4, "drop_death": 6}
+                    tex_sol = [os.path.join(DOSSIER_DATA, "mobs", "ville", "sol", f"mob_sol.{i}.png") for i in range(1, 6)]
+                    stats_air = {"pv": 4, "degats": 1.0, "drop_hit": 4, "drop_death": 3}
+                    tex_air = [os.path.join(DOSSIER_DATA, "mobs", "ville", "air", f"drone{i}.png") for i in range(2)]
+                    chemin_boule = os.path.join(DOSSIER_DATA, "mobs", "ville", "air", "boule_bleue.png")
                 else:
                     spawn_possible = False
 
                 if spawn_possible:
-                    self.timer_spawn_mobs = 30.0 # On bloque le spawn pour 30s
+                    # On lance le cooldown de 30 secondes
+                    self.timer_spawn_mobs = 30.0
                     
-                    # --- NOUVEAU : On spawn EXACTEMENT 2 vols et 2 sols ---
-                    for _ in range(2):
-                        # On spawn les mobs à au moins 300px du joueur
-                        cote = random.choice([-1, 1])
-                        dist_x = random.randint(300, 600)
-                        
-                        # Spawn Mob Sol
-                        m_sol = MobSol(px + (cote * dist_x), py + 100, self.fleur, s_sol, t_sol)
-                        self.ennemis.append(m_sol)
-                        
-                        # Spawn Mob Air
-                        m_air = MobAir(px + (cote * dist_x), py + 300, self.fleur, s_air, t_air, c_boule, self.projectiles_ennemis)
-                        self.ennemis.append(m_air)
-
-        # --- E. LOGIQUE DE COMBAT ET COLLISIONS (Reste de ton code) ---
-        gerer_collisions(self.tiroirs)
-        # --- MISE À JOUR DES ENNEMIS ---
-        murs = self.scene.get_sprite_list("murs") # Ou le nom exact de ton calque de collision
-        for ennemi in self.tiroirs["ennemis"]:
-            ennemi.update_mob(delta_time, murs)
-
-        # --- Ligne 817 ---
-        if do_separation:
-            separer_mobs(self.tiroirs["ennemis"], murs) # On appelle bien la fonction importée
-
-        # 2. GESTION DU DASH (Timers et États)
-        if self.fleur.timer_dash > 0:
-            self.fleur.timer_dash -= delta_time
-
-        # NOUVEAU : On empêche les mobs de se superposer
-        separer_mobs(self.tiroirs["ennemis"], murs)
-    
+                    for _ in range(3):
+                        # Spawn Sol
+                        rx = px + random.randint(-640, 640)
+                        ry = self.fleur.center_y + 100
+                        self.ennemis.append(MobSol(rx, ry, self.fleur, stats_sol, tex_sol))
+                        # Spawn Air
+                        rax = px + random.randint(-640, 640)
+                        ray = self.fleur.center_y + 300
+                        self.ennemis.append(MobAir(rax, ray, self.fleur, stats_air, tex_air, chemin_boule, self.projectiles_ennemis))
+                     
     def on_draw(self):
         # 1. On nettoie l'écran
         self.clear()
         
-        # 1. DESSIN DU PARALLAX (En arrière-plan total)
-        # On dessine le plus loin d'abord
-        self.camera_bg1.use()
-        self.bg_parallax_1.draw()
-        
-        self.camera_bg0.use()
-        self.bg_parallax_0.draw()
-
-        # 2. COUCHE "MONDE" (Le jeu normal)
+        # --- A. COUCHE "MONDE" (Tout ce qui bouge quand le joueur marche) ---
+        # On utilise la caméra du jeu (qui suit le joueur)
         self.camera_jeu.use()
-        self.scene.draw()
         
         # On dessine la map
         if self.scene:
@@ -1325,14 +1201,10 @@ class MonJeu(arcade.View):
         if "pnj" in self.tiroirs:
             self.tiroirs["pnj"].draw()
 
-        if "ennemis" in self.tiroirs: 
-            self.tiroirs["ennemis"].draw()
+        if "ennemis" in self.tiroirs: self.tiroirs["ennemis"].draw()
         
         if "boss" in self.tiroirs:
             self.tiroirs["boss"].draw()
-
-        self.ennemis.draw() 
-        self.projectiles_ennemis.draw()
 
         if "boss" in self.tiroirs:
             self.tiroirs["boss"].draw()
@@ -1371,56 +1243,7 @@ class MonJeu(arcade.View):
 
         if self.mode_dev and self.interface_dev.ouvert:
             self.interface_dev.dessiner(self.fleur)
-
-        # -- DESSIN DES BARRES DE VIE DES MOBS ---
-        # On reste sur la camera_sprites pour que les barres suivent les mobs sur la map
-        for ennemi in self.tiroirs.get("ennemis", []):
-            if hasattr(ennemi, "pv") and hasattr(ennemi, "pv_max"):
-                pourcentage = max(0, ennemi.pv / ennemi.pv_max)
-                largeur_barre = 40
-                hauteur_barre = 6
-                y_barre = ennemi.top + 10 # 10 pixels au-dessus de sa tête
-                
-                # Fond rouge (vie perdue)
-                arcade.draw_rectangle_filled(
-                    ennemi.center_x, y_barre, 
-                    largeur_barre, hauteur_barre, 
-                    arcade.color.RED
-                )
-                
-                # Premier plan vert (vie restante)
-                if pourcentage > 0:
-                    largeur_verte = largeur_barre * pourcentage
-                    # On décale le rectangle vert pour qu'il s'aligne à gauche
-                    decalage_x = ennemi.center_x - (largeur_barre - largeur_verte) / 2
-                    arcade.draw_rectangle_filled(
-                        decalage_x, y_barre, 
-                        largeur_verte, hauteur_barre, 
-                        arcade.color.GREEN
-                    )
-
-        # --- DESSIN DES BARRES DE VIE DES ENNEMIS ---
-        for ennemi in self.ennemis:
-            if hasattr(ennemi, "vie") and hasattr(ennemi, "vie_max") and ennemi.vie > 0:
-                pourcentage = max(0, ennemi.vie / ennemi.vie_max)
-                largeur_barre = 40
-                hauteur_barre = 6
-                y_barre = ennemi.top + 10 # Au-dessus de sa tête
-                
-                # Fond rouge (Correction Arcade 3.0)
-                arcade.draw_rect_filled(
-                    arcade.rect.XYWH(ennemi.center_x, y_barre, largeur_barre, hauteur_barre),
-                    arcade.color.RED
-                )
-                
-                # Jauge verte (Correction Arcade 3.0)
-                if pourcentage > 0:
-                    largeur_verte = largeur_barre * pourcentage
-                    decalage_x = ennemi.center_x - (largeur_barre - largeur_verte) / 2
-                    arcade.draw_rect_filled(
-                        arcade.rect.XYWH(decalage_x, y_barre, largeur_verte, hauteur_barre),
-                        arcade.color.GREEN
-                    )
+              
 def main():
     window = arcade.Window(LARGEUR, HAUTEUR, TITRE)
     # --- MODIFICATION ICI : On lance le menu principal au lieu de la cinématique ---
