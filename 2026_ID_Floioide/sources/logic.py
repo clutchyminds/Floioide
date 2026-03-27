@@ -1,6 +1,6 @@
 import arcade
 import random
-
+from entities import BossDVD
 def gerer_collisions(tiroirs):
     """ Gère les impacts des attaques sur les ennemis et les boss """
     if "attaques" not in tiroirs or not tiroirs["attaques"]:
@@ -30,11 +30,21 @@ def gerer_collisions(tiroirs):
             if ennemi not in attaque.deja_touche:
                 multiplicateur = 2 if "argentx2.png" in joueur.inventaire_charmes else 1
 
+                # AJOUT : Logique spécifique au Boss DVD
+                if isinstance(ennemi, BossDVD):
+                    joueur.monnaie += 30 * multiplicateur # 30 pièces au touché
+                    ennemi.vie -= 1 # On lui retire 1 PV par coup
+                    if ennemi.vie <= 0:
+                        joueur.monnaie += 10 * multiplicateur # 10 pièces à la mort
+                        ennemi.remove_from_sprite_lists()
+                    attaque.deja_touche.add(ennemi)
+                    continue # On passe au suivant pour ne pas appliquer la logique des mobs normaux
+
                 # On vérifie l'invulnérabilité du mob s'il en a une
                 if hasattr(ennemi, "invul_timer"):
                     if ennemi.invul_timer <= 0:
-                        # ON ENLÈVE EXACTEMENT 1 DÉGÂT
-                        if hasattr(ennemi, "pv"): ennemi.pv -= 1
+                        #enleve 1 dégat
+                        if hasattr(ennemi, "vie"): ennemi.vie -= 1
                         elif hasattr(ennemi, "points_de_vie"): ennemi.points_de_vie -= 1
                         
                         gains = getattr(ennemi, "drop_hit", 1)
@@ -43,16 +53,21 @@ def gerer_collisions(tiroirs):
                         attaque.deja_touche.add(ennemi)
                 else:
                     # Si pas d'invul_timer, il prend 1 dégât direct
-                    if hasattr(ennemi, "pv"): ennemi.pv -= 1
+                    if hasattr(ennemi, "vie"): ennemi.vie -= 1
                     elif hasattr(ennemi, "points_de_vie"): ennemi.points_de_vie -= 1
                     
                     joueur.monnaie += (1 * multiplicateur)
                     attaque.deja_touche.add(ennemi)
 
+                if isinstance(ennemi, BossDVD):
+                    joueur.monnaie += 30 # Donne 30 pièces au touché
+                    if ennemi.vie <= 0:
+                        joueur.monnaie += 10 # Donne 10 pièces à la mort
+
                 # --- VÉRIFICATION MORT ---
-                vie_actuelle = getattr(ennemi, "vie", getattr(ennemi, "pv", getattr(ennemi, "points_de_vie", 0)))
+                vie = getattr(ennemi, "vie", getattr(ennemi, "vie", getattr(ennemi, "vie", 0)))
                 
-                if vie_actuelle <= 0:
+                if vie <= 0:
                     if hasattr(ennemi, "drop_death"): joueur.monnaie += (ennemi.drop_death * multiplicateur)
                     elif not hasattr(ennemi, "invul_timer"): joueur.monnaie += (2 * multiplicateur)
                         
@@ -62,8 +77,29 @@ def gerer_collisions(tiroirs):
                             for n in nouveaux:
                                 if "boss" in tiroirs: tiroirs["boss"].append(n)
                                 else: tiroirs["ennemis"].append(n)
-                                
+                    joueur.monnaie += 5  
                     ennemi.remove_from_sprite_lists()
+
+
+    # GESTION DES PROJECTILES DU JOUEUR (Le Piou)
+    # GESTION DES BALLES DU PIOU
+    if "projectiles_joueur" in tiroirs:
+        for proj in tiroirs["projectiles_joueur"]:
+            # On vérifie si la balle touche un ennemi ou le boss
+            cibles = []
+            if "ennemis" in tiroirs:
+                cibles.extend(arcade.check_for_collision_with_list(proj, tiroirs["ennemis"]))
+            if "boss" in tiroirs:
+                cibles.extend(arcade.check_for_collision_with_list(proj, tiroirs["boss"]))
+            
+            if cibles:
+                for cible in cibles:
+                    # On applique les 2 pts de dégâts (proj.degats est défini à 2)
+                    if hasattr(cible, "vie"): cible.vie -= proj.degats
+                    elif hasattr(cible, "vie"): cible.vie -= proj.degats
+                
+                # La balle disparaît après l'impact
+                proj.remove_from_sprite_lists()
 
 def gerer_separation_mobs(liste_mobs, liste_murs):
     """ 

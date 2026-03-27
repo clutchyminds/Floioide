@@ -5,7 +5,7 @@ from constantes import LARGEUR, HAUTEUR, DOSSIER_DATA
 
 class HUD:
     def __init__(self):
-        # 1. CHARGEMENT DES TEXTURES
+        #CHARGEMENT DES TEXTURES
         chemin_vies = os.path.join(DOSSIER_DATA, "player", "vies")
         self.tex_vie_1 = arcade.load_texture(os.path.join(chemin_vies, "vie1.png"))
         self.tex_vie_05 = arcade.load_texture(os.path.join(chemin_vies, "vie0.5.png"))
@@ -42,11 +42,11 @@ class HUD:
             arcade.draw_texture_rect(tex, arcade.rect.XYWH(x_coeur, y_coeur, 32, 32))
 
     def dessiner_inventaire_et_monnaie(self, joueur):
-        # 1. MONNAIE
+        #MONNAIE
         arcade.draw_texture_rect(self.tex_monnaie, arcade.rect.XYWH(LARGEUR - 150, 50, 40, 40))
         arcade.draw_text(f"{joueur.monnaie} $", LARGEUR - 100, 40, arcade.color.YELLOW, 18, bold=True)
         
-        # 2. INVENTAIRE CONSOMMABLES (3 cases, horizontal, au milieu)
+        #INVENTAIRE CONSOMMABLES (3 cases, horizontal, au milieu)
         start_x = LARGEUR // 2 - 100
         for i in range(3):
             x_slot = start_x + i * 80
@@ -63,7 +63,7 @@ class HUD:
                 # Dessiner le nombre de l'item (stack) en bas à droite de la case
                 arcade.draw_text(f"x{item['qte']}", x_slot + 10, y_slot - 25, arcade.color.WHITE, 12, bold=True)
                 
-        # 3. INVENTAIRE CHARMES (4 cases, vertical, à gauche de l'écran par exemple)
+        # INVENTAIRE CHARMES (4 cases, vertical, à gauche de l'écran par exemple)
         for i in range(4):
             x_slot = 40
             y_slot = HAUTEUR // 2 + (i * 70) - 100
@@ -78,7 +78,7 @@ class HUD:
                     arcade.draw_texture_rect(tex_charme, arcade.rect.XYWH(x_slot, y_slot, 40, 40))
                 except: pass # Si image introuvable, on laisse vide
 
-        # 4. GOUTTE D'EAU ET FLEUR DASH
+        # GOUTTE D'EAU ET FLEUR DASH
         val_eau = max(0, min(100, int(joueur.eau // 25) * 25))
         arcade.draw_texture_rect(self.textures_eau[val_eau], arcade.rect.XYWH(650, 140, 64, 64))
         arcade.draw_text(f"{int(joueur.eau)}", 670, 130, arcade.color.CYAN, 18, bold=True)
@@ -102,11 +102,11 @@ class InterfaceShop:
         self.souris_x = 0
         self.souris_y = 0
 
-        # --- Chemins des dossiers ---
+        # Chemins des dossiers
         self.chemin_pnj = os.path.join(DOSSIER_DATA, "mobs", "PNJ")
         self.chemin_items = os.path.join(self.chemin_pnj, "items") # Chemin corrigé
 
-        # --- Chargement du GUI ---
+        # Chargement du GUI
         try:
             self.tex_gui = arcade.load_texture(os.path.join(self.chemin_pnj, "gui.png"))
             self.tex_btn = arcade.load_texture(os.path.join(self.chemin_pnj, "boutton.png"))
@@ -114,19 +114,18 @@ class InterfaceShop:
             self.tex_gui = None
             self.tex_btn = None
 
-        # --- Chargement des Items ---
-        # --- Chargement des Items (remplacer l'ancien bloc par ça) ---
+        # Chargement des Items
         self.items = []
-        self.charger_item("Eau de source", 10, "eau.1.png", "conso")
-        self.charger_item("Eau minérale", 25, "eau.2.png", "conso")
-        self.charger_item("Eau pure", 50, "eau.3.png", "conso")
-        self.charger_item("Petit Soin", 40, "Heal1.png", "conso")
-        self.charger_item("Grand Soin", 80, "Heal2.png", "conso")
-        self.charger_item("Piou Piou", 100, "piou.png", "arme")
+        self.charger_item("Eau de source", 2, "eau.1.png", "conso")
+        self.charger_item("Eau minérale", 10, "eau.2.png", "conso")
+        self.charger_item("Eau pure", 20, "eau.3.png", "conso")
+        self.charger_item("Petit Soin", 5, "Heal1.png", "conso")
+        self.charger_item("Grand Soin", 30, "Heal2.png", "conso")
+        self.charger_item("Piou Piou", 10000, "piou.png", "arme")
         # Les charmes
-        self.charger_item("Double Saut", 150, "2_saut.png", "charme")
-        self.charger_item("Argent x2", 200, "argentx2.png", "charme")
-        self.charger_item("Coeurs +5", 250, "coeurs+5.png", "charme")
+        self.charger_item("Double Saut", 50, "2_saut.png", "charme")
+        self.charger_item("Argent x2", 60, "argentx2.png", "charme")
+        self.charger_item("Coeurs +5", 70, "coeurs+5.png", "charme")
 
         # Dimensions
         self.btn_largeur = 200
@@ -156,7 +155,7 @@ class InterfaceShop:
         else:
             arcade.draw_rect_filled(arcade.rect.XYWH(LARGEUR//2, HAUTEUR//2, 650, 450), arcade.color.DARK_GRAY)
 
-        # 2. Croix de fermeture (Position précise)
+        # Croix de fermeture (Position précise)
         croix_x = LARGEUR//2 + 285
         croix_y = HAUTEUR//2 + 195
         survol_croix = abs(self.souris_x - croix_x) < 25 and abs(self.souris_y - croix_y) < 25
@@ -165,7 +164,7 @@ class InterfaceShop:
         arcade.draw_rect_filled(arcade.rect.XYWH(croix_x, croix_y, 40, 40), couleur)
         arcade.draw_text("X", croix_x, croix_y, arcade.color.WHITE, 20, bold=True, anchor_x="center", anchor_y="center")
 
-        # 3. Grille d'items
+        # Grille d'items
         start_x = LARGEUR//2 - 195
         start_y = HAUTEUR//2 + 80
 
@@ -222,8 +221,6 @@ class Chat:
         for i, msg in enumerate(reversed(self.messages)):
             y = 150 + (i * 25)
             arcade.draw_text(msg["texte"], 20, y, msg["couleur"], 14)
-
-
 
 class InterfaceDev:
     def __init__(self):
@@ -287,7 +284,7 @@ class InterfaceDev:
             
             # Détection du clic
             if abs(y - ly) < 15:
-                # --- CALCUL DU CHANGEMENT ---
+                # CALCUL DU CHANGEMENT
                 changement = 0
                 if abs(x - (LARGEUR//2 - 150)) < 15: # Bouton [-]
                     changement = -ligne["step"]
@@ -304,7 +301,7 @@ class InterfaceDev:
                         valeur_actuelle = getattr(joueur, ligne["attr"])
                         setattr(joueur, ligne["attr"], valeur_actuelle + changement)
 
-        # --- CLIC SUR LE BOUTON NOCLIP (C'est ici que ça coince souvent) ---
+        # CLIC SUR LE BOUTON NOCLIP
         y_noclip = start_y - len(self.lignes) * 40 - 20
         # On vérifie si la souris est dans le rectangle central du Noclip
         if abs(x - LARGEUR//2) < 100 and abs(y - y_noclip) < 20:
