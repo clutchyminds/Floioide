@@ -1,0 +1,17 @@
+# Notification Discord à chaque push sur main
+
+notify-discord:
+  stage: deploy
+  image: alpine:latest
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+  before_script:
+    - apk add --no-cache curl
+  script:
+    - |
+      SAFE_MSG=$(printf '%s' "$CI_COMMIT_MESSAGE" | head -1 | sed 's/\\/\\\\/g; s/"/\\"/g')
+      SAFE_AUTHOR=$(printf '%s' "$CI_COMMIT_AUTHOR" | sed 's/\\/\\\\/g; s/"/\\"/g')
+      cat > /tmp/discord.json <<ENDJSON
+      {"embeds":[{"title":"Nouveau push sur floioide","description":"**Branche :** ${CI_COMMIT_BRANCH}\n**Auteur :** ${SAFE_AUTHOR}\n**Commit :** ${CI_COMMIT_SHORT_SHA}\n\n${SAFE_MSG}","color":49281,"url":"${CI_PROJECT_URL}/-/commit/${CI_COMMIT_SHA}"}]}
+      ENDJSON
+      curl -H "Content-Type: application/json" -X POST -d @/tmp/discord.json "$DISCORD_WEBHOOK_URL"

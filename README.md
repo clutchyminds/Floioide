@@ -1,5 +1,7 @@
 # LES TROPHÉES NSI 2026 : FLOÏOÏDE (ID:1634)
 
+[Voir la vidéo de présentation](presentation.mp4)
+
 ## Description
 
 Floïoïde est un jeu vidéo 2D de type Metroidvania développé en Python avec la bibliothèque [Arcade](https://api.arcade.academy/). Le joueur incarne une fleur qui explore un monde inspiré de la nature, affronte des ennemis et un boss, tout en gérant ses ressources en eau et ses points de vie.
@@ -48,6 +50,19 @@ pip install -r requirements.txt
 python main.py
 ```
 
-### Statut
+### Ressources utilisées
 
-Brouillon soumis le 2026-02-23 13:28:59
+- [Arcade](https://api.arcade.academy/) : bibliothèque Python pour le développement de jeux 2D (licence MIT)
+- [Tiled](https://www.mapeditor.org/) : éditeur de cartes de tuiles (format TMJ)
+- Python 3.13
+
+### Auteurs
+
+- Laure, Thomas, Corentin, Victor
+- Encadrement : @OB
+- Lycée général et technologique privé Sainte Marie Bastide, Académie de Bordeaux
+- NSI Première, année scolaire 2025-2026
+
+### Licence
+
+GPL v3+ (voir fichier LICENSE)
