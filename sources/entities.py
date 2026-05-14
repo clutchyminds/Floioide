@@ -877,6 +877,7 @@ class NouveauMobBase(EntiteAnimee):
                         return # emplacement libre trouve
             # si vraiment tout est bloque remettre a place
             self.center_x, self.center_y = origine_x, origine_y
+            self.remove_from_sprite_lists()
 
 class MobSol(NouveauMobBase):
     def __init__(self, x, y, joueur, stats, textures_paths):
