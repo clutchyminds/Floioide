@@ -879,6 +879,7 @@ class NouveauMobBase(EntiteAnimee):
             self.center_x, self.center_y = origine_x, origine_y
             self.remove_from_sprite_lists()
 
+
 class MobSol(NouveauMobBase):
     def __init__(self, x, y, joueur, stats, textures_paths):
         super().__init__(x, y, joueur, stats, textures_paths)
@@ -1181,8 +1182,8 @@ class BossRobot(EntiteBossTron):
         self.center_y = y
         self.joueur = joueur
         
-        self.vie = 12
-        self.vie_max = 12
+        self.vie = 24
+        self.vie_max = 24
         self.degats = 10 # degats contact direct
         
         # chargement textures
@@ -1213,8 +1214,8 @@ class BossRobot(EntiteBossTron):
             self.invul_timer -= delta_time
 
         # 1 gestion phase et animation
-        if self.vie >= 8: phase = 1
-        elif self.vie >= 4: phase = 2
+        if self.vie >= 16: phase = 1
+        elif self.vie >= 8: phase = 2
         else: phase = 3
         
         self.anim_timer += delta_time
@@ -1314,8 +1315,14 @@ class BossDVD(EntiteAnimee):
         self.joueur = joueur
         self.vie_max = 50 
         self.vie = 50
-        self.vitesse = 6  # augmentation vitesse
-        
+
+        #Il accelere a mesure que sa vie baisse
+        if self.vie >= 33:
+            self.vitesse = 6
+        elif self.vie >= 17:
+            self.vitesse = 9
+        else:
+            self.vitesse = 12
         # direction initiale (diagonale)
         self.change_x = self.vitesse
         self.change_y = self.vitesse
@@ -1332,6 +1339,8 @@ class BossDVD(EntiteAnimee):
         self.texture = self.textures_animation[0]
         self.frame_anim = 0
         self.timer_anim = 0
+
+        
 
     def update_boss(self, delta_time, liste_projectiles, liste_murs):
         # 1 animation
